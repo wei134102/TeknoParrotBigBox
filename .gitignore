@@ -1,0 +1,23 @@
+# TeknoParrotBigBox - 忽略大体积/生成目录
+
+# 编译输出
+bin/
+obj/
+
+# 启动脚本（可从上游或工具重新生成）
+bat/
+
+# 封面与视频资源（体积大，可在本地维护）
+covers/
+videos/
+Media/
+
+# 原程序图标缓存
+Icons/
+
+# 从 LaunchBox/工具生成的元数据
+Metadata/
+
+# 如果 Models 目录仅存放生成/导出的数据，可忽略
+Models/
+
