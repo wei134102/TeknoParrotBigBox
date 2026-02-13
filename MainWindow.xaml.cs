@@ -163,11 +163,20 @@ namespace TeknoParrotBigBox
         }
 
         /// <summary>
-        /// 从 bat / Metadata / Icons / Media\Covers / Media\Videos / launchbox_descriptions.json 加载游戏与分类。
+        /// 官方客户端鹦鹉 UI 路径：与 BigBox 同目录的 TeknoParrotUi.exe。
+        /// </summary>
+        private static string GetTeknoParrotUiPath(string baseDir)
+        {
+            return Path.Combine(baseDir, "TeknoParrotUi.exe");
+        }
+
+        /// <summary>
+        /// 从 UserProfiles（优先）/ bat / Metadata / Icons / Media\Covers / Media\Videos / launchbox_descriptions.json 加载游戏与分类。
         /// </summary>
         private void LoadGamesFromFolders()
         {
             var baseDir = AppDomain.CurrentDomain.BaseDirectory;
+            var userProfilesDir = Path.Combine(baseDir, "UserProfiles");
             var batDir = Path.Combine(baseDir, "bat");
             var metadataDir = Path.Combine(baseDir, "Metadata");
             var iconsDir = Path.Combine(baseDir, "Icons");
@@ -175,52 +184,61 @@ namespace TeknoParrotBigBox
             var videosDir = Path.Combine(baseDir, "Media", "Videos");
             var launchboxJsonPath = Path.Combine(baseDir, "launchbox_descriptions.json");
 
-            if (!Directory.Exists(batDir))
+            // 1) 优先使用官方 UserProfiles 目录（.xml 文件名 = profileId），比 bat 更可靠
+            var profileIdsFromUserProfiles = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            if (Directory.Exists(userProfilesDir))
             {
-                MessageBox.Show(Localization.Get("MsgNoBatFolder"), Localization.Get("CaptionTip"),
-                    MessageBoxButton.OK, MessageBoxImage.Information);
-                return;
+                foreach (var xmlPath in Directory.GetFiles(userProfilesDir, "*.xml", SearchOption.TopDirectoryOnly))
+                {
+                    var profileId = Path.GetFileNameWithoutExtension(xmlPath);
+                    if (!string.IsNullOrWhiteSpace(profileId))
+                        profileIdsFromUserProfiles[profileId] = profileId;
+                }
             }
 
-            // 1) 预扫描 bat，按 profileId 建立索引（--profile=XXXX.xml）
+            // 2) 若无 UserProfiles 或为空，则回退到 bat 目录扫描（--profile=XXXX.xml）
             var batByProfileId = new Dictionary<string, BatInfo>(StringComparer.OrdinalIgnoreCase);
-            foreach (var batPath in Directory.GetFiles(batDir, "*.bat", SearchOption.TopDirectoryOnly))
+            if (profileIdsFromUserProfiles.Count == 0)
             {
-                try
+                if (!Directory.Exists(batDir))
                 {
-                    var lines = File.ReadAllLines(batPath);
-                    if (lines.Length == 0) continue;
-
-                    var line = lines[0];
-                    var marker = "--profile=";
-                    var idx = line.IndexOf(marker, StringComparison.OrdinalIgnoreCase);
-                    string profileId = null;
-                    if (idx >= 0)
-                    {
-                        var start = idx + marker.Length;
-                        var end = line.IndexOf(".xml", start, StringComparison.OrdinalIgnoreCase);
-                        if (end > start)
-                        {
-                            profileId = line.Substring(start, end - start);
-                        }
-                    }
-
-                    var displayName = Path.GetFileNameWithoutExtension(batPath);
-
-                    batByProfileId[profileId ?? displayName] = new BatInfo
-                    {
-                        ProfileId = profileId,
-                        BatPath = batPath,
-                        DisplayName = displayName
-                    };
+                    MessageBox.Show(Localization.Get("MsgNoBatFolder"), Localization.Get("CaptionTip"),
+                        MessageBoxButton.OK, MessageBoxImage.Information);
+                    return;
                 }
-                catch
+                foreach (var batPath in Directory.GetFiles(batDir, "*.bat", SearchOption.TopDirectoryOnly))
                 {
-                    // 忽略单个 bat 解析错误
+                    try
+                    {
+                        var lines = File.ReadAllLines(batPath);
+                        if (lines.Length == 0) continue;
+                        var line = lines[0];
+                        var marker = "--profile=";
+                        var idx = line.IndexOf(marker, StringComparison.OrdinalIgnoreCase);
+                        string profileId = null;
+                        if (idx >= 0)
+                        {
+                            var start = idx + marker.Length;
+                            var end = line.IndexOf(".xml", start, StringComparison.OrdinalIgnoreCase);
+                            if (end > start)
+                                profileId = line.Substring(start, end - start);
+                        }
+                        var displayName = Path.GetFileNameWithoutExtension(batPath);
+                        batByProfileId[profileId ?? displayName] = new BatInfo
+                        {
+                            ProfileId = profileId,
+                            BatPath = batPath,
+                            DisplayName = displayName
+                        };
+                    }
+                    catch
+                    {
+                        // 忽略单个 bat 解析错误
+                    }
                 }
             }
 
-            // 2) 预加载 Metadata（按文件名 = profileId）
+            // 3) 预加载 Metadata（按文件名 = profileId）
             var metadataByProfileId = new Dictionary<string, GameMetadata>(StringComparer.OrdinalIgnoreCase);
             if (Directory.Exists(metadataDir))
             {
@@ -232,9 +250,7 @@ namespace TeknoParrotBigBox
                         var json = File.ReadAllText(jsonPath);
                         var meta = JsonConvert.DeserializeObject<GameMetadata>(json);
                         if (meta != null)
-                        {
                             metadataByProfileId[profileId] = meta;
-                        }
                     }
                     catch
                     {
@@ -243,7 +259,7 @@ namespace TeknoParrotBigBox
                 }
             }
 
-            // 3) 预加载 LaunchBox 描述（按 profileId）
+            // 4) 预加载 LaunchBox 描述（按 profileId）
             var launchboxByProfileId = new Dictionary<string, LaunchboxDescription>(StringComparer.OrdinalIgnoreCase);
             if (File.Exists(launchboxJsonPath))
             {
@@ -265,52 +281,92 @@ namespace TeknoParrotBigBox
                 }
             }
 
-            // 4) 合并：优先使用 profileId 匹配到的 LaunchBox 描述 + metadata + bat
+            // 5) 合并：LaunchBox 描述 + metadata + 来源（UserProfiles 或 bat）
             var groups = new Dictionary<string, List<GameEntry>>(StringComparer.OrdinalIgnoreCase);
+            var teknoParrotUiPath = GetTeknoParrotUiPath(baseDir);
 
-            foreach (var kv in batByProfileId)
+            if (profileIdsFromUserProfiles.Count > 0)
             {
-                var batInfo = kv.Value;
-                var profileId = batInfo.ProfileId ?? kv.Key;
-
-                metadataByProfileId.TryGetValue(profileId, out var meta);
-                launchboxByProfileId.TryGetValue(profileId, out var lb);
-
-                var title =
-                    !string.IsNullOrWhiteSpace(lb?.Title) ? lb.Title :
-                    meta != null ? SanitizeGameName(meta.GameName) :
-                    batInfo.DisplayName;
-
-                // 描述优先使用 LaunchBox 的 Notes，其次使用 Metadata 中的简要信息
-                var description =
-                    !string.IsNullOrWhiteSpace(lb?.Notes) ? lb.Notes :
-                    BuildDescription(meta);
-                var coverPath = ResolveCoverPath(coversDir, iconsDir, profileId, batInfo.DisplayName, meta);
-                var videoPath = ResolveVideoPath(videosDir, profileId, batInfo.DisplayName);
-
-                var entry = new GameEntry
+                // 来源：UserProfiles，启动方式为 TeknoParrotUi.exe --profile=ID.xml
+                foreach (var kv in profileIdsFromUserProfiles)
                 {
-                    ProfileId = profileId,
-                    Title = title,
-                    Description = description,
-                    CoverImagePath = coverPath,
-                    VideoPath = videoPath,
-                    LaunchExecutable = batInfo.BatPath,
-                    LaunchArguments = string.Empty
-                };
+                    var profileId = kv.Key;
+                    var displayName = kv.Value;
 
-                // 分类 key：优先使用 metadata 的 game_genre，其次 LaunchBox 的 genre
-                var categoryKey = GetLocalizedCategory(meta?.GameGenre, lb?.Genre);
+                    metadataByProfileId.TryGetValue(profileId, out var meta);
+                    launchboxByProfileId.TryGetValue(profileId, out var lb);
 
-                if (!groups.TryGetValue(categoryKey, out var list))
-                {
-                    list = new List<GameEntry>();
-                    groups[categoryKey] = list;
+                    var title =
+                        !string.IsNullOrWhiteSpace(lb?.Title) ? lb.Title :
+                        meta != null ? SanitizeGameName(meta.GameName) :
+                        displayName;
+                    var description =
+                        !string.IsNullOrWhiteSpace(lb?.Notes) ? lb.Notes :
+                        BuildDescription(meta);
+                    var coverPath = ResolveCoverPath(coversDir, iconsDir, profileId, displayName, meta);
+                    var videoPath = ResolveVideoPath(videosDir, profileId, displayName);
+
+                    var entry = new GameEntry
+                    {
+                        ProfileId = profileId,
+                        Title = title,
+                        Description = description,
+                        CoverImagePath = coverPath,
+                        VideoPath = videoPath,
+                        LaunchExecutable = teknoParrotUiPath,
+                        LaunchArguments = "--profile=" + profileId + ".xml"
+                    };
+                    var categoryKey = GetLocalizedCategory(meta?.GameGenre, lb?.Genre);
+                    if (!groups.TryGetValue(categoryKey, out var list))
+                    {
+                        list = new List<GameEntry>();
+                        groups[categoryKey] = list;
+                    }
+                    list.Add(entry);
                 }
-                list.Add(entry);
+            }
+            else
+            {
+                // 回退：bat，启动方式为执行 bat
+                foreach (var kv in batByProfileId)
+                {
+                    var batInfo = kv.Value;
+                    var profileId = batInfo.ProfileId ?? kv.Key;
+
+                    metadataByProfileId.TryGetValue(profileId, out var meta);
+                    launchboxByProfileId.TryGetValue(profileId, out var lb);
+
+                    var title =
+                        !string.IsNullOrWhiteSpace(lb?.Title) ? lb.Title :
+                        meta != null ? SanitizeGameName(meta.GameName) :
+                        batInfo.DisplayName;
+                    var description =
+                        !string.IsNullOrWhiteSpace(lb?.Notes) ? lb.Notes :
+                        BuildDescription(meta);
+                    var coverPath = ResolveCoverPath(coversDir, iconsDir, profileId, batInfo.DisplayName, meta);
+                    var videoPath = ResolveVideoPath(videosDir, profileId, batInfo.DisplayName);
+
+                    var entry = new GameEntry
+                    {
+                        ProfileId = profileId,
+                        Title = title,
+                        Description = description,
+                        CoverImagePath = coverPath,
+                        VideoPath = videoPath,
+                        LaunchExecutable = batInfo.BatPath,
+                        LaunchArguments = string.Empty
+                    };
+                    var categoryKey = GetLocalizedCategory(meta?.GameGenre, lb?.Genre);
+                    if (!groups.TryGetValue(categoryKey, out var list))
+                    {
+                        list = new List<GameEntry>();
+                        groups[categoryKey] = list;
+                    }
+                    list.Add(entry);
+                }
             }
 
-            // 5) 把分组结果转换为 Category 集合
+            // 6) 把分组结果转换为 Category 集合
             Categories.Clear();
 
             // 收藏列表固定放在最上方
@@ -465,7 +521,7 @@ namespace TeknoParrotBigBox
                     Arguments = selected.LaunchArguments ?? string.Empty
                 };
 
-                // 如果是 bat，用 cmd /c 启动更安全
+                startInfo.UseShellExecute = false;
                 if (string.Equals(Path.GetExtension(startInfo.FileName), ".bat", StringComparison.OrdinalIgnoreCase))
                 {
                     var batPath = startInfo.FileName;
@@ -479,15 +535,9 @@ namespace TeknoParrotBigBox
                 }
                 else
                 {
-                    startInfo.UseShellExecute = false;
-                    if (!Path.IsPathRooted(startInfo.FileName))
-                    {
-                        startInfo.WorkingDirectory = AppDomain.CurrentDomain.BaseDirectory;
-                    }
-                    else
-                    {
-                        startInfo.WorkingDirectory = Path.GetDirectoryName(startInfo.FileName) ?? AppDomain.CurrentDomain.BaseDirectory;
-                    }
+                    startInfo.WorkingDirectory = Path.IsPathRooted(startInfo.FileName)
+                        ? Path.GetDirectoryName(startInfo.FileName) ?? AppDomain.CurrentDomain.BaseDirectory
+                        : AppDomain.CurrentDomain.BaseDirectory;
                 }
 
                 // 启动游戏进程

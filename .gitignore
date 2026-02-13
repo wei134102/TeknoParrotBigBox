@@ -6,7 +6,7 @@ obj/
 .vs/
 # 启动脚本（可从上游或工具重新生成）
 bat/
-
+UserProfiles/
 # 封面与视频资源（体积大，可在本地维护）
 covers/
 videos/
@@ -20,4 +20,8 @@ Metadata/
 
 # 如果 Models 目录仅存放生成/导出的数据，可忽略
 Models/
-
+./Newtonsoft.Json.dll
+./Newtonsoft.Json.xml
+./TeknoParrotBigBox.exe   
+./TeknoParrotBigBox.exe.config
+./TeknoParrotBigBox.pdb

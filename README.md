@@ -26,12 +26,17 @@
 
 ## 目录结构约定
 
-项目根目录（`D:\code\TeknoParrotBigBox`）下常用目录：
+项目根目录（即 BigBox 程序所在目录）下常用目录：
 
-- `bat\`  
-  启动脚本，通常为：
-  - `XXX.bat`，首行包含 `--profile=XXXX.xml`  
-  由 BigBox 用来推导 **profileId**。
+- **`UserProfiles\`**（推荐）  
+  官方 TeknoParrot 客户端添加游戏后生成的配置目录，拷贝到 BigBox 程序目录即可。  
+  - 内含 `*.xml`，文件名即 **profileId**（如 `WMMT6RR.xml`）。  
+  - BigBox **优先**扫描此目录作为游戏列表来源，比 bat 更可靠。  
+  - 开始游戏时执行：**`TeknoParrotUi.exe --profile=ID.xml`**（鹦鹉 UI 与 BigBox 同目录）。
+
+- `bat\`（回退）  
+  当 `UserProfiles` 不存在或为空时，才使用 bat 目录：
+  - `XXX.bat`，首行包含 `--profile=XXXX.xml`，用于推导 profileId 并作为启动脚本。
 
 - `Metadata\`  
   原 TeknoParrot 元数据（`*.json`），不再修改，只做读取：
@@ -68,9 +73,10 @@
 ## 运行方式
 
 1. 使用 Visual Studio 或 MSBuild 编译 `TeknoParrotBigBox.csproj`（.NET 4.6.2）。
-2. 将生成的 `TeknoParrotBigBox.exe` 放到与你的 `TeknoParrotUi.exe` 同一目录（或保证 `bat/`、`Metadata/` 等路径正确）。
+2. 将生成的 `TeknoParrotBigBox.exe` 与 `TeknoParrotUi.exe` 放在**同一目录**，启动游戏时调用同目录下的 `TeknoParrotUi.exe --profile=ID.xml`。
 3. 准备数据：
-   - `bat\`：TeknoParrot 的启动脚本（含 `--profile=XXXX.xml`）。
+   - **`UserProfiles\`**：从官方客户端目录拷贝过来（推荐，游戏列表来源）；若无则用 `bat\`。
+   - `bat\`：TeknoParrot 的启动脚本（含 `--profile=XXXX.xml`），在无 UserProfiles 时使用。
    - `Metadata\`：原 TeknoParrot JSON 配置。
    - `Teknoparrot.xml`：从 LaunchBox 导出的游戏数据。
    - 原始封面/视频复制到：
