@@ -3,7 +3,7 @@
 一个独立的 WPF 启动前端，用于为 TeknoParrot 提供类似 LaunchBox / BigBox 风格的全屏封面 + 视频浏览界面。
 
 > 运行环境：Windows + .NET Framework 4.6.2  
-> 目录位置建议：与 `TeknoParrotUi.exe` 放在同一目录下（例如 `D:\code\TeknoParrotUI_MYSELF` 旁边）
+> 目录位置建议：将 `TeknoParrotBigBox.exe` 与 `TeknoParrotUi.exe` 放在**同一目录**
 
 ---
 
@@ -17,7 +17,7 @@
   - 游戏预览视频（可静音/开声）
   - 可滚动的游戏介绍（来自 LaunchBox `Teknoparrot.xml`）
   - 操作按钮：
-    - **开始游戏**：启动当前游戏（调用 bat / TeknoParrot）
+    - **开始游戏**：启动当前游戏（调用同目录 `TeknoParrotUi.exe --profile=ID.xml`；无 UserProfiles 时回退为执行 bat）
     - **收藏游戏 / 取消收藏**：加入/移出「★ 收藏」分类
     - **返回鹦鹉**：退出 BigBox，并启动同目录下 `TeknoParrotUi.exe`
     - **设置 / 关于本程序**：预留入口 + 显示当前 BigBox 程序版本
