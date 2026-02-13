@@ -2,7 +2,7 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:local="clr-namespace:TeknoParrotBigBox"
-        Title="TeknoParrot BigBox"
+        Title="{Binding WindowTitle}"
         WindowStyle="None"
         WindowState="Maximized"
         Background="#111111"
@@ -236,39 +236,39 @@
                             Margin="0,12,0,0"
                             Orientation="Horizontal"
                             HorizontalAlignment="Left">
-                    <Button Content="开始游戏"
+                    <Button x:Name="StartGameButton" Content="开始游戏"
                             Width="100"
                             Margin="0,0,8,0"
                             Height="32"
                             Click="StartGameButton_Click"
                             Style="{StaticResource GreenPrimaryButtonStyle}" />
-                    <Button Content="收藏游戏"
+                    <Button x:Name="FavoriteGameButton" Content="收藏游戏"
                             Width="100"
                             Margin="0,0,8,0"
                             Height="32"
                             Click="FavoriteGameButton_Click"
                             IsEnabled="{Binding ElementName=GamesList, Path=SelectedItem.IsFavorite, Converter={StaticResource BoolInvert}}"
                             Style="{StaticResource DarkActionButtonStyle}" />
-                    <Button Content="取消收藏"
+                    <Button x:Name="UnfavoriteGameButton" Content="取消收藏"
                             Width="100"
                             Margin="0,0,8,0"
                             Height="32"
                             Click="UnfavoriteGameButton_Click"
                             IsEnabled="{Binding ElementName=GamesList, Path=SelectedItem.IsFavorite}"
                             Style="{StaticResource DarkActionButtonStyle}" />
-                    <Button Content="返回鹦鹉"
+                    <Button x:Name="BackToParrotButton" Content="返回鹦鹉"
                             Width="100"
                             Margin="0,0,8,0"
                             Height="32"
                             Click="BackToParrotButton_Click"
                             Style="{StaticResource DarkActionButtonStyle}" />
-                    <Button Content="设置"
+                    <Button x:Name="SettingsButton" Content="设置"
                             Width="80"
                             Margin="0,0,8,0"
                             Height="32"
                             Click="SettingsButton_Click"
                             Style="{StaticResource DarkActionButtonStyle}" />
-                    <Button Content="关于本程序"
+                    <Button x:Name="AboutButton" Content="关于本程序"
                             Width="110"
                             Margin="0,0,8,0"
                             Height="32"
@@ -283,18 +283,15 @@
                    VerticalAlignment="Bottom"
                    HorizontalAlignment="Stretch"
                    Margin="16">
-            <TextBlock Text="↑↓←→ 选择    Enter/A 启动    Esc/B 退出    支持 XInput / DINPUT 手柄"
+            <TextBlock x:Name="HintText" Text="↑↓←→ 选择    Enter/A 启动    Esc/B 退出    支持 XInput / DINPUT 手柄"
                        Foreground="#BBBBBB"
                        FontSize="14"
                        VerticalAlignment="Center" />
-            <TextBlock DockPanel.Dock="Right"
+            <TextBlock x:Name="GamesCountText" DockPanel.Dock="Right"
                        Foreground="#BBBBBB"
                        FontSize="14"
-                       VerticalAlignment="Center">
-                <Run Text="共 " />
-                <Run Text="{Binding TotalGameCount, Mode=OneWay}" />
-                <Run Text=" 款游戏" />
-            </TextBlock>
+                       VerticalAlignment="Center"
+                       Text="{Binding GamesCountFormatted, Mode=OneWay}" />
         </DockPanel>
     </Grid>
 </Window>

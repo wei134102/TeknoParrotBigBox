@@ -29,6 +29,13 @@ namespace TeknoParrotBigBox
         private bool _autoMutedForGame;
         private Process _currentGameProcess;
 
+        private string _windowTitle = "TeknoParrot BigBox";
+        public string WindowTitle
+        {
+            get => _windowTitle;
+            set { _windowTitle = value; OnPropertyChanged(nameof(WindowTitle)); }
+        }
+
         private int _totalGameCount;
         /// <summary>总游戏数量（不含收藏分类内的重复计数）。</summary>
         public int TotalGameCount
@@ -40,9 +47,12 @@ namespace TeknoParrotBigBox
                 {
                     _totalGameCount = value;
                     OnPropertyChanged(nameof(TotalGameCount));
+                    OnPropertyChanged(nameof(GamesCountFormatted));
                 }
             }
         }
+
+        public string GamesCountFormatted => Localization.Get("GamesCountPrefix") + TotalGameCount + Localization.Get("GamesCountSuffix");
 
         private GameCategory _selectedCategory;
         public GameCategory SelectedCategory
@@ -62,7 +72,10 @@ namespace TeknoParrotBigBox
         {
             InitializeComponent();
             DataContext = this;
+            Localization.Load();
             LoadGamesFromFolders();
+            ApplyLanguage();
+            Localization.LanguageChanged += (s, ev) => ApplyLanguage();
 
             // 自动滚动游戏介绍
             _descriptionScrollTimer = new DispatcherTimer
@@ -164,7 +177,7 @@ namespace TeknoParrotBigBox
 
             if (!Directory.Exists(batDir))
             {
-                MessageBox.Show("未找到 bat 目录，当前没有可用的游戏启动脚本。", "提示",
+                MessageBox.Show(Localization.Get("MsgNoBatFolder"), Localization.Get("CaptionTip"),
                     MessageBoxButton.OK, MessageBoxImage.Information);
                 return;
             }
@@ -361,7 +374,7 @@ namespace TeknoParrotBigBox
                     }
                 }
 
-                _favoritesCategory.Name = $"★ 收藏 ({_favoritesCategory.Games.Count})";
+                _favoritesCategory.Name = Localization.Get("CategoryFavorites") + " (" + _favoritesCategory.Games.Count + ")";
             }
 
             // 统计总游戏数（不含收藏，避免重复计数）
@@ -389,9 +402,25 @@ namespace TeknoParrotBigBox
 
             if (Categories.Count == 0)
             {
-                MessageBox.Show("未在 bat 目录中找到任何可分组的游戏脚本。", "提示",
+                MessageBox.Show(Localization.Get("MsgNoGameScripts"), Localization.Get("CaptionTip"),
                     MessageBoxButton.OK, MessageBoxImage.Information);
             }
+        }
+
+        /// <summary>根据当前语言刷新主界面所有文案（含收藏分类名称）。</summary>
+        private void ApplyLanguage()
+        {
+            WindowTitle = Localization.Get("TitleMain");
+            if (StartGameButton != null) StartGameButton.Content = Localization.Get("ButtonStartGame");
+            if (FavoriteGameButton != null) FavoriteGameButton.Content = Localization.Get("ButtonFavorite");
+            if (UnfavoriteGameButton != null) UnfavoriteGameButton.Content = Localization.Get("ButtonUnfavorite");
+            if (BackToParrotButton != null) BackToParrotButton.Content = Localization.Get("ButtonBackToParrot");
+            if (SettingsButton != null) SettingsButton.Content = Localization.Get("ButtonSettings");
+            if (AboutButton != null) AboutButton.Content = Localization.Get("ButtonAbout");
+            if (HintText != null) HintText.Text = Localization.Get("HintBottom");
+            OnPropertyChanged(nameof(GamesCountFormatted));
+            if (_favoritesCategory != null)
+                _favoritesCategory.Name = Localization.Get("CategoryFavorites") + " (" + (_favoritesCategory.Games?.Count ?? 0) + ")";
         }
 
         /// <summary>切换左侧分类后，将右侧游戏列表定位到本分类的第一个游戏并滚动到可见。</summary>
@@ -417,13 +446,13 @@ namespace TeknoParrotBigBox
             var selected = GamesList.SelectedItem as GameEntry;
             if (selected == null)
             {
-                MessageBox.Show("尚未选择游戏。", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
+                MessageBox.Show(Localization.Get("MsgNoGameSelected"), Localization.Get("CaptionTip"), MessageBoxButton.OK, MessageBoxImage.Information);
                 return;
             }
 
             if (string.IsNullOrWhiteSpace(selected.LaunchExecutable))
             {
-                MessageBox.Show("当前游戏尚未配置启动命令行参数，稍后可在 GameEntry 中补充。", "提示",
+                MessageBox.Show(Localization.Get("MsgLaunchNotConfigured"), Localization.Get("CaptionTip"),
                     MessageBoxButton.OK, MessageBoxImage.Information);
                 return;
             }
@@ -467,7 +496,7 @@ namespace TeknoParrotBigBox
             }
             catch (Exception ex)
             {
-                MessageBox.Show("启动游戏失败：\n" + ex.Message, "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+                MessageBox.Show(Localization.Get("MsgLaunchFailed", ex.Message), Localization.Get("CaptionError"), MessageBoxButton.OK, MessageBoxImage.Error);
                 return;
             }
 
@@ -509,7 +538,7 @@ namespace TeknoParrotBigBox
             var selected = GamesList.SelectedItem as GameEntry;
             if (selected == null)
             {
-                MessageBox.Show("尚未选择游戏。", "提示",
+                MessageBox.Show(Localization.Get("MsgNoGameSelected"), Localization.Get("CaptionTip"),
                     MessageBoxButton.OK, MessageBoxImage.Information);
                 return;
             }
@@ -548,8 +577,8 @@ namespace TeknoParrotBigBox
 
         private void SettingsButton_Click(object sender, RoutedEventArgs e)
         {
-            MessageBox.Show("设置界面暂未实现，可以在后续版本中添加。", "提示",
-                MessageBoxButton.OK, MessageBoxImage.Information);
+            var win = new SettingsWindow { Owner = this };
+            win.ShowDialog();
         }
 
         private void BackToParrotButton_Click(object sender, RoutedEventArgs e)
@@ -561,7 +590,7 @@ namespace TeknoParrotBigBox
 
                 if (!System.IO.File.Exists(parrotPath))
                 {
-                    MessageBox.Show("未找到 TeknoParrotUi.exe。\n\n请确认它与 TeknoParrotBigBox.exe 位于同一目录。", "无法返回鹦鹉 UI",
+                    MessageBox.Show(Localization.Get("MsgParrotNotFound"), Localization.Get("MsgParrotNotFoundTitle"),
                         MessageBoxButton.OK, MessageBoxImage.Warning);
                     return;
                 }
@@ -577,7 +606,7 @@ namespace TeknoParrotBigBox
             }
             catch (Exception ex)
             {
-                MessageBox.Show("启动 TeknoParrotUi 失败：\n" + ex.Message, "错误",
+                MessageBox.Show(Localization.Get("MsgParrotStartFailed", ex.Message), Localization.Get("CaptionError"),
                     MessageBoxButton.OK, MessageBoxImage.Error);
                 return;
             }
@@ -589,14 +618,10 @@ namespace TeknoParrotBigBox
         private void AboutButton_Click(object sender, RoutedEventArgs e)
         {
             var version = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
-            var versionText = version != null ? version.ToString() : "未知版本";
-
+            var versionText = version != null ? version.ToString() : Localization.Get("VersionUnknown");
             MessageBox.Show(
-                "TeknoParrot BigBox 前端" +
-                "\n\n版本：" + versionText +
-                "\n作者：B站：86年复古游戏厅" +
-                "\n用途：为 TeknoParrot 提供封面 + 视频风格启动界面。",
-                "关于本程序",
+                Localization.Get("AboutMessage", versionText),
+                Localization.Get("AboutTitle"),
                 MessageBoxButton.OK,
                 MessageBoxImage.Information);
         }
@@ -680,8 +705,8 @@ namespace TeknoParrotBigBox
         private void TryCloseWithConfirm()
         {
             var result = MessageBox.Show(
-                "确定要退出 TeknoParrot BigBox 吗？",
-                "退出确认",
+                Localization.Get("ExitConfirmMessage"),
+                Localization.Get("ExitConfirmTitle"),
                 MessageBoxButton.OKCancel,
                 MessageBoxImage.Question,
                 MessageBoxResult.Cancel);
@@ -692,8 +717,8 @@ namespace TeknoParrotBigBox
         private void Window_Closing(object sender, CancelEventArgs e)
         {
             var result = MessageBox.Show(
-                "确定要退出 TeknoParrot BigBox 吗？",
-                "退出确认",
+                Localization.Get("ExitConfirmMessage"),
+                Localization.Get("ExitConfirmTitle"),
                 MessageBoxButton.OKCancel,
                 MessageBoxImage.Question,
                 MessageBoxResult.Cancel);
@@ -1017,7 +1042,7 @@ namespace TeknoParrotBigBox
                 File.WriteAllText(favoritesPath, json);
 
                 // 更新收藏分类名称中的数量
-                _favoritesCategory.Name = $"★ 收藏 ({_favoritesCategory.Games.Count})";
+                _favoritesCategory.Name = Localization.Get("CategoryFavorites") + " (" + _favoritesCategory.Games.Count + ")";
             }
             catch
             {
