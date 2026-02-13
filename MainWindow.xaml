@@ -6,7 +6,8 @@
         WindowStyle="None"
         WindowState="Maximized"
         Background="#111111"
-        KeyDown="Window_KeyDown">
+        KeyDown="Window_KeyDown"
+        Closing="Window_Closing">
     <Window.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVis" />
         <local:BooleanInverterConverter x:Key="BoolInvert" />
@@ -57,6 +58,7 @@
             <ListBox x:Name="CategoriesList"
                      ItemsSource="{Binding Categories}"
                      SelectedItem="{Binding SelectedCategory, Mode=TwoWay}"
+                     SelectionChanged="CategoriesList_SelectionChanged"
                      Background="Transparent"
                      BorderThickness="0"
                      Foreground="White"
@@ -276,14 +278,23 @@
             </Grid>
         </Border>
 
-        <!-- 底部提示 -->
+        <!-- 底部提示 + 总游戏数 -->
         <DockPanel Grid.ColumnSpan="3"
                    VerticalAlignment="Bottom"
                    HorizontalAlignment="Stretch"
                    Margin="16">
-            <TextBlock Text="↑↓←→ 选择游戏    Enter 启动    Esc 退出 BigBox"
+            <TextBlock Text="↑↓←→ 选择    Enter/A 启动    Esc/B 退出    支持 XInput / DINPUT 手柄"
                        Foreground="#BBBBBB"
-                       FontSize="14" />
+                       FontSize="14"
+                       VerticalAlignment="Center" />
+            <TextBlock DockPanel.Dock="Right"
+                       Foreground="#BBBBBB"
+                       FontSize="14"
+                       VerticalAlignment="Center">
+                <Run Text="共 " />
+                <Run Text="{Binding TotalGameCount, Mode=OneWay}" />
+                <Run Text=" 款游戏" />
+            </TextBlock>
         </DockPanel>
     </Grid>
 </Window>

@@ -21,11 +21,28 @@ namespace TeknoParrotBigBox
         private GameCategory _favoritesCategory;
 
         private readonly DispatcherTimer _descriptionScrollTimer;
+        private readonly DispatcherTimer _gamepadTimer;
+        private GamepadInput.GamepadState _lastGamepadState;
         private double _descriptionScrollOffset;
         private bool _isDescriptionHovered;
         private bool _isMuted = false;
         private bool _autoMutedForGame;
         private Process _currentGameProcess;
+
+        private int _totalGameCount;
+        /// <summary>总游戏数量（不含收藏分类内的重复计数）。</summary>
+        public int TotalGameCount
+        {
+            get => _totalGameCount;
+            private set
+            {
+                if (_totalGameCount != value)
+                {
+                    _totalGameCount = value;
+                    OnPropertyChanged(nameof(TotalGameCount));
+                }
+            }
+        }
 
         private GameCategory _selectedCategory;
         public GameCategory SelectedCategory
@@ -54,6 +71,82 @@ namespace TeknoParrotBigBox
             };
             _descriptionScrollTimer.Tick += DescriptionScrollTimer_Tick;
             _descriptionScrollTimer.Start();
+
+            // 手柄轮询（XInput + DINPUT/winmm 摇杆）
+            _gamepadTimer = new DispatcherTimer
+            {
+                Interval = TimeSpan.FromMilliseconds(50)
+            };
+            _gamepadTimer.Tick += GamepadTimer_Tick;
+            _gamepadTimer.Start();
+        }
+
+        private void GamepadTimer_Tick(object sender, EventArgs e)
+        {
+            var now = GamepadInput.Poll();
+            if (!now.HasInput)
+                return;
+
+            // 边沿检测：仅在手柄“刚按下”时触发，避免连发
+            if (now.Left && !_lastGamepadState.Left)
+                MoveCategoryLeft();
+            if (now.Right && !_lastGamepadState.Right)
+                MoveCategoryRight();
+            if (now.Up && !_lastGamepadState.Up)
+                MoveGameUp();
+            if (now.Down && !_lastGamepadState.Down)
+                MoveGameDown();
+            if (now.A && !_lastGamepadState.A)
+                LaunchSelectedGame();
+            if (now.B && !_lastGamepadState.B)
+                TryCloseWithConfirm();
+
+            _lastGamepadState = now;
+        }
+
+        private void MoveCategoryLeft()
+        {
+            if (CategoriesList == null || Categories.Count == 0) return;
+            int idx = CategoriesList.SelectedIndex;
+            if (idx <= 0) return;
+            CategoriesList.SelectedIndex = idx - 1;
+            CategoriesList.Focus();
+        }
+
+        private void MoveCategoryRight()
+        {
+            if (CategoriesList == null || Categories.Count == 0) return;
+            int idx = CategoriesList.SelectedIndex;
+            if (idx < 0 || idx >= Categories.Count - 1) return;
+            CategoriesList.SelectedIndex = idx + 1;
+            CategoriesList.Focus();
+        }
+
+        private void MoveGameUp()
+        {
+            if (SelectedCategory?.Games == null || GamesList == null || SelectedCategory.Games.Count == 0) return;
+            int idx = GamesList.SelectedIndex;
+            if (idx <= 0) return;
+            GamesList.SelectedIndex = idx - 1;
+            if (GamesList.SelectedItem != null)
+                GamesList.ScrollIntoView(GamesList.SelectedItem);
+            GamesList.Focus();
+            _descriptionScrollOffset = 0;
+            DescriptionScrollViewer?.ScrollToVerticalOffset(0);
+        }
+
+        private void MoveGameDown()
+        {
+            if (SelectedCategory?.Games == null || GamesList == null || SelectedCategory.Games.Count == 0) return;
+            int idx = GamesList.SelectedIndex;
+            if (idx < 0) idx = 0;
+            if (idx >= SelectedCategory.Games.Count - 1) return;
+            GamesList.SelectedIndex = idx + 1;
+            if (GamesList.SelectedItem != null)
+                GamesList.ScrollIntoView(GamesList.SelectedItem);
+            GamesList.Focus();
+            _descriptionScrollOffset = 0;
+            DescriptionScrollViewer?.ScrollToVerticalOffset(0);
         }
 
         /// <summary>
@@ -271,6 +364,15 @@ namespace TeknoParrotBigBox
                 _favoritesCategory.Name = $"★ 收藏 ({_favoritesCategory.Games.Count})";
             }
 
+            // 统计总游戏数（不含收藏，避免重复计数）
+            int total = 0;
+            foreach (var c in Categories)
+            {
+                if (c.Key == "__favorites") continue;
+                total += c.Games?.Count ?? 0;
+            }
+            TotalGameCount = total;
+
             // 默认选中第一个分类和第一个游戏
             if (Categories.Count > 0)
             {
@@ -290,6 +392,24 @@ namespace TeknoParrotBigBox
                 MessageBox.Show("未在 bat 目录中找到任何可分组的游戏脚本。", "提示",
                     MessageBoxButton.OK, MessageBoxImage.Information);
             }
+        }
+
+        /// <summary>切换左侧分类后，将右侧游戏列表定位到本分类的第一个游戏并滚动到可见。</summary>
+        private void CategoriesList_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
+        {
+            if (SelectedCategory?.Games == null || GamesList == null)
+                return;
+            // 等绑定更新完再选中第一项并滚动
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                if (SelectedCategory.Games.Count > 0)
+                {
+                    GamesList.SelectedIndex = 0;
+                    if (GamesList.SelectedItem != null)
+                        GamesList.ScrollIntoView(GamesList.SelectedItem);
+                }
+                GamesList.Focus();
+            }), DispatcherPriority.Loaded);
         }
 
         private void LaunchSelectedGame()
@@ -556,11 +676,36 @@ namespace TeknoParrotBigBox
             _isDescriptionHovered = false;
         }
 
+        /// <summary>弹出确认框，仅在用户确认后关闭主界面，防止误退出。</summary>
+        private void TryCloseWithConfirm()
+        {
+            var result = MessageBox.Show(
+                "确定要退出 TeknoParrot BigBox 吗？",
+                "退出确认",
+                MessageBoxButton.OKCancel,
+                MessageBoxImage.Question,
+                MessageBoxResult.Cancel);
+            if (result == MessageBoxResult.OK)
+                Close();
+        }
+
+        private void Window_Closing(object sender, CancelEventArgs e)
+        {
+            var result = MessageBox.Show(
+                "确定要退出 TeknoParrot BigBox 吗？",
+                "退出确认",
+                MessageBoxButton.OKCancel,
+                MessageBoxImage.Question,
+                MessageBoxResult.Cancel);
+            if (result != MessageBoxResult.OK)
+                e.Cancel = true;
+        }
+
         private void Window_KeyDown(object sender, KeyEventArgs e)
         {
             if (e.Key == Key.Escape)
             {
-                Close();
+                TryCloseWithConfirm();
                 return;
             }
 
