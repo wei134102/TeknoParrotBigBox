@@ -6,7 +6,9 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Media;
 using Newtonsoft.Json;
 using System.Windows.Threading;
 using TeknoParrotBigBox.Models;
@@ -22,12 +24,18 @@ namespace TeknoParrotBigBox
 
         private readonly DispatcherTimer _descriptionScrollTimer;
         private readonly DispatcherTimer _gamepadTimer;
+        private readonly DispatcherTimer _previewDelayTimer;
         private GamepadInput.GamepadState _lastGamepadState;
         private double _descriptionScrollOffset;
         private bool _isDescriptionHovered;
         private bool _isMuted = false;
         private bool _autoMutedForGame;
         private Process _currentGameProcess;
+        private bool _categoryPreviewRetryScheduled;
+        /// <summary>当前用于预览的 MediaElement，每 N 次加载会替换为新实例，避免 WPF 单实例多次 Source 切换后失效。</summary>
+        private System.Windows.Controls.MediaElement _previewMedia;
+        private int _previewLoadCount;
+        private const int PreviewMediaReplaceInterval = 10;
 
         private string _windowTitle = "TeknoParrot BigBox";
         public string WindowTitle
@@ -92,6 +100,86 @@ namespace TeknoParrotBigBox
             };
             _gamepadTimer.Tick += GamepadTimer_Tick;
             _gamepadTimer.Start();
+
+            // 预览视频延迟播放，避免快速切换游戏时频繁起停，模仿 Pegasus 的预览节奏
+            _previewDelayTimer = new DispatcherTimer
+            {
+                Interval = TimeSpan.FromMilliseconds(250)
+            };
+            _previewDelayTimer.Tick += PreviewDelayTimer_Tick;
+            _previewMedia = PreviewMedia;
+        }
+
+        /// <summary>每 N 次加载后替换为新 MediaElement 实例，避免 WPF 单实例多次 Source 切换后不再播放。</summary>
+        private void ReplacePreviewMediaElementIfNeeded()
+        {
+            if (PreviewMediaHostGrid == null || _previewMedia == null) return;
+            try
+            {
+                _previewMedia.Stop();
+                _previewMedia.Source = null;
+                PreviewMediaHostGrid.Children.Remove(_previewMedia);
+                var newMedia = new System.Windows.Controls.MediaElement
+                {
+                    Stretch = Stretch.Uniform,
+                    Volume = _isMuted ? 0.0 : 0.5,
+                    LoadedBehavior = System.Windows.Controls.MediaState.Manual,
+                    UnloadedBehavior = System.Windows.Controls.MediaState.Stop
+                };
+                PreviewMediaHostGrid.Children.Insert(0, newMedia);
+                _previewMedia = newMedia;
+                _previewLoadCount = 0;
+            }
+            catch { }
+        }
+
+        private void PreviewDelayTimer_Tick(object sender, EventArgs e)
+        {
+            _previewDelayTimer.Stop();
+
+            if (_previewMedia == null)
+                return;
+
+            try
+            {
+                var selected = GamesList.SelectedItem as GameEntry;
+                if (selected != null && !string.IsNullOrWhiteSpace(selected.VideoPath))
+                {
+                    var path = selected.VideoPath.Trim();
+                    Uri uri = Path.IsPathRooted(path)
+                        ? new Uri(path, UriKind.Absolute)
+                        : new Uri(Path.GetFullPath(path), UriKind.Absolute);
+                    _previewMedia.Stop();
+                    _previewMedia.Source = null;
+                    Dispatcher.BeginInvoke(new Action(() =>
+                    {
+                        if (_previewMedia == null) return;
+                        var cur = GamesList?.SelectedItem as GameEntry;
+                        if (cur != selected || string.IsNullOrWhiteSpace(cur?.VideoPath)) return;
+                        try
+                        {
+                            _previewLoadCount++;
+                            if (_previewLoadCount >= PreviewMediaReplaceInterval)
+                                ReplacePreviewMediaElementIfNeeded();
+                            if (_previewMedia == null) return;
+                            _previewMedia.Source = uri;
+                            _previewMedia.Volume = _isMuted ? 0.0 : 0.5;
+                            _previewMedia.Position = TimeSpan.Zero;
+                            _previewMedia.Play();
+                        }
+                        catch { }
+                    }), DispatcherPriority.Loaded);
+                }
+                else
+                {
+                    _previewMedia.Stop();
+                    _previewMedia.Source = null;
+                }
+            }
+            catch
+            {
+                // 忽略 MediaElement 的状态异常
+            }
         }
 
         private void GamepadTimer_Tick(object sender, EventArgs e)
@@ -100,15 +188,15 @@ namespace TeknoParrotBigBox
             if (!now.HasInput)
                 return;
 
-            // 边沿检测：仅在手柄“刚按下”时触发，避免连发
+            // 边沿检测：左右=切换游戏，上下=切换分类（与键盘一致，和原来一样）
             if (now.Left && !_lastGamepadState.Left)
-                MoveCategoryLeft();
-            if (now.Right && !_lastGamepadState.Right)
-                MoveCategoryRight();
-            if (now.Up && !_lastGamepadState.Up)
                 MoveGameUp();
-            if (now.Down && !_lastGamepadState.Down)
+            if (now.Right && !_lastGamepadState.Right)
                 MoveGameDown();
+            if (now.Up && !_lastGamepadState.Up)
+                MoveCategoryLeft();
+            if (now.Down && !_lastGamepadState.Down)
+                MoveCategoryRight();
             if (now.A && !_lastGamepadState.A)
                 LaunchSelectedGame();
             if (now.B && !_lastGamepadState.B)
@@ -117,22 +205,50 @@ namespace TeknoParrotBigBox
             _lastGamepadState = now;
         }
 
+        /// <summary>分类向左切换，光标保持在中间、列表动；到第一个时循环到最后一个。</summary>
         private void MoveCategoryLeft()
         {
             if (CategoriesList == null || Categories.Count == 0) return;
-            int idx = CategoriesList.SelectedIndex;
-            if (idx <= 0) return;
-            CategoriesList.SelectedIndex = idx - 1;
+            int idx = CategoriesList.SelectedIndex < 0 ? 0 : CategoriesList.SelectedIndex;
+            int next = idx <= 0 ? Categories.Count - 1 : idx - 1;
+            CategoriesList.SelectedIndex = next;
+            ScrollCategoryIntoView();
             CategoriesList.Focus();
         }
 
+        /// <summary>分类向右切换，光标保持在中间、列表动；到最后一个时循环到第一个。</summary>
         private void MoveCategoryRight()
         {
             if (CategoriesList == null || Categories.Count == 0) return;
-            int idx = CategoriesList.SelectedIndex;
-            if (idx < 0 || idx >= Categories.Count - 1) return;
-            CategoriesList.SelectedIndex = idx + 1;
+            int idx = CategoriesList.SelectedIndex < 0 ? 0 : CategoriesList.SelectedIndex;
+            int next = idx >= Categories.Count - 1 ? 0 : idx + 1;
+            CategoriesList.SelectedIndex = next;
+            ScrollCategoryIntoView();
             CategoriesList.Focus();
+        }
+
+        /// <summary>将当前选中的分类居中显示，只保留约 7 个分类可见、选中项不动在中间，左右切换时轮动。</summary>
+        private void ScrollCategoryIntoView()
+        {
+            if (CategoriesList?.SelectedItem == null || CategoriesScrollViewer == null) return;
+            CategoriesList.ScrollIntoView(CategoriesList.SelectedItem);
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                try
+                {
+                    var container = CategoriesList.ItemContainerGenerator.ContainerFromItem(CategoriesList.SelectedItem) as FrameworkElement;
+                    var listBox = CategoriesScrollViewer.Content as FrameworkElement;
+                    if (container == null || listBox == null || container.ActualWidth <= 0) return;
+                    var pt = container.TranslatePoint(new Point(0, 0), listBox);
+                    double itemCenter = pt.X + container.ActualWidth / 2.0;
+                    double viewportCenter = CategoriesScrollViewer.ViewportWidth / 2.0;
+                    double offset = itemCenter - viewportCenter;
+                    double maxOffset = Math.Max(0, CategoriesScrollViewer.ExtentWidth - CategoriesScrollViewer.ViewportWidth);
+                    offset = Math.Max(0, Math.Min(offset, maxOffset));
+                    CategoriesScrollViewer.ScrollToHorizontalOffset(offset);
+                }
+                catch { }
+            }), DispatcherPriority.Loaded);
         }
 
         private void MoveGameUp()
@@ -479,22 +595,37 @@ namespace TeknoParrotBigBox
                 _favoritesCategory.Name = Localization.Get("CategoryFavorites") + " (" + (_favoritesCategory.Games?.Count ?? 0) + ")";
         }
 
-        /// <summary>切换左侧分类后，将右侧游戏列表定位到本分类的第一个游戏并滚动到可见。</summary>
+        /// <summary>切换分类后，将游戏列表定位到本分类第一个游戏，并保证分类栏中选中项可见。用 ApplicationIdle 确保绑定已更新后再设选中项和预览，避免“切到最后一类再切回来”无预览。</summary>
         private void CategoriesList_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
         {
             if (SelectedCategory?.Games == null || GamesList == null)
                 return;
-            // 等绑定更新完再选中第一项并滚动
-            Dispatcher.BeginInvoke(new Action(() =>
+            ScrollCategoryIntoView();
+            _previewDelayTimer.Stop();
+            // 只 Stop 不置空 Source，避免多次切换分类后 MediaElement 异常导致全部分类黑屏
+            if (_previewMedia != null) { try { _previewMedia.Stop(); } catch { } }
+            _categoryPreviewRetryScheduled = false;
+            // 延后到 ApplicationIdle，确保 SelectedCategory.Games 绑定到 GamesList 已完成，再设 SelectedIndex 和启动预览（否则切回时列表仍是上一分类，选中无效）
+            Dispatcher.BeginInvoke(new Action(ApplyCategoryChangeAndPreview), DispatcherPriority.ApplicationIdle);
+        }
+
+        private void ApplyCategoryChangeAndPreview()
+        {
+            if (SelectedCategory?.Games == null || GamesList == null) return;
+            if (SelectedCategory.Games.Count > 0)
             {
-                if (SelectedCategory.Games.Count > 0)
+                GamesList.SelectedIndex = 0;
+                if (GamesList.SelectedItem != null)
+                    GamesList.ScrollIntoView(GamesList.SelectedItem);
+                StartPreviewForCurrentGame();
+                // 若绑定尚未生效导致 SelectedItem 仍为 null，再调度一次重试（仅一次）
+                if (GamesList.SelectedItem == null && !_categoryPreviewRetryScheduled)
                 {
-                    GamesList.SelectedIndex = 0;
-                    if (GamesList.SelectedItem != null)
-                        GamesList.ScrollIntoView(GamesList.SelectedItem);
+                    _categoryPreviewRetryScheduled = true;
+                    Dispatcher.BeginInvoke(new Action(ApplyCategoryChangeAndPreview), DispatcherPriority.ApplicationIdle);
                 }
-                GamesList.Focus();
-            }), DispatcherPriority.Loaded);
+            }
+            GamesList.Focus();
         }
 
         private void LaunchSelectedGame()
@@ -551,11 +682,11 @@ namespace TeknoParrotBigBox
             }
 
             // 启动游戏后，直接停止预览视频（不再在后台播放）
-            if (PreviewMedia != null)
+            if (_previewMedia != null)
             {
                 try
                 {
-                    PreviewMedia.Stop();
+                    _previewMedia.Stop();
                 }
                 catch
                 {
@@ -716,29 +847,37 @@ namespace TeknoParrotBigBox
 
         private void GamesList_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
         {
-            if (PreviewMedia == null)
+            if (_previewMedia == null)
                 return;
-
             try
             {
-                var selected = GamesList.SelectedItem as GameEntry;
-                if (selected != null && !string.IsNullOrWhiteSpace(selected.VideoPath))
-                {
-                    // 当选中有视频的游戏时，重新播放预览
-                    PreviewMedia.Volume = _isMuted ? 0.0 : 0.5;
-                    PreviewMedia.Position = TimeSpan.Zero;
-                    PreviewMedia.Play();
-                }
-                else
-                {
-                    // 没有视频时停止预览
-                    PreviewMedia.Stop();
-                }
+                _previewDelayTimer.Stop();
+                _previewMedia.Stop();
+                StartPreviewForCurrentGame();
             }
             catch
             {
                 // 忽略 MediaElement 的状态异常
             }
+        }
+
+        /// <summary>根据当前选中的游戏启动预览（有视频则启动延迟计时器，无则清空画面）。切换分类后若选中项引用未变，SelectionChanged 不会触发，需在分类切换回调里显式调用。</summary>
+        private void StartPreviewForCurrentGame()
+        {
+            if (_previewMedia == null) return;
+            try
+            {
+                var selected = GamesList?.SelectedItem as GameEntry;
+                if (selected != null && !string.IsNullOrWhiteSpace(selected.VideoPath))
+                {
+                    _previewDelayTimer.Start();
+                }
+                else
+                {
+                    _previewMedia.Source = null;
+                }
+            }
+            catch { }
         }
 
         private void DescriptionScrollViewer_MouseEnter(object sender, System.Windows.Input.MouseEventArgs e)
@@ -774,6 +913,31 @@ namespace TeknoParrotBigBox
                 MessageBoxResult.Cancel);
             if (result != MessageBoxResult.OK)
                 e.Cancel = true;
+        }
+
+        /// <summary>PreviewKeyDown 先于列表收到按键，保证左右=游戏、上下=分类统一生效。</summary>
+        private void Window_PreviewKeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key == Key.Left)
+            {
+                MoveGameUp();
+                e.Handled = true;
+            }
+            else if (e.Key == Key.Right)
+            {
+                MoveGameDown();
+                e.Handled = true;
+            }
+            else if (e.Key == Key.Up)
+            {
+                MoveCategoryLeft();
+                e.Handled = true;
+            }
+            else if (e.Key == Key.Down)
+            {
+                MoveCategoryRight();
+                e.Handled = true;
+            }
         }
 
         private void Window_KeyDown(object sender, KeyEventArgs e)
@@ -922,9 +1086,9 @@ namespace TeknoParrotBigBox
         private void ToggleMuteButton_Click(object sender, RoutedEventArgs e)
         {
             _isMuted = !_isMuted;
-            if (PreviewMedia != null)
+            if (_previewMedia != null)
             {
-                PreviewMedia.Volume = _isMuted ? 0.0 : 0.5;
+                _previewMedia.Volume = _isMuted ? 0.0 : 0.5;
             }
 
             if (MuteIcon != null)
@@ -1031,7 +1195,7 @@ namespace TeknoParrotBigBox
             if (raw.Any(c => c >= 0x4e00 && c <= 0x9fff))
                 return raw;
 
-            // 常见 LaunchBox 英文类型 → 中文
+            // 常见 LaunchBox / TeknoParrot 英文类型 → 中文（尽量覆盖未汉化分类）
             switch (raw.ToLowerInvariant())
             {
                 case "action":
@@ -1039,11 +1203,15 @@ namespace TeknoParrotBigBox
                 case "fighting":
                     return "格斗";
                 case "racing":
+                case "driving":
                     return "竞速";
                 case "shooter":
                 case "light gun":
+                case "first person shooter":
+                case "fps":
                     return "射击";
                 case "music":
+                case "music/rhythm":
                     return "音乐";
                 case "sports":
                     return "体育";
@@ -1056,7 +1224,46 @@ namespace TeknoParrotBigBox
                     return "节奏";
                 case "beat 'em up":
                 case "beat'em up":
+                case "beat em up":
                     return "横版过关";
+                case "adventure":
+                case "adventure game":
+                    return "冒险";
+                case "simulation":
+                case "sim":
+                    return "模拟";
+                case "role-playing":
+                case "roleplaying":
+                case "rpg":
+                    return "角色扮演";
+                case "arcade":
+                    return "街机";
+                case "misc":
+                case "miscellaneous":
+                case "other":
+                    return "其他";
+                case "pinball":
+                    return "弹珠";
+                case "card":
+                case "card game":
+                    return "卡牌";
+                case "board":
+                case "board game":
+                    return "桌游";
+                case "trivia":
+                    return "问答";
+                case "compilation":
+                    return "合集";
+                case "party":
+                case "party game":
+                    return "聚会";
+                case "horror":
+                    return "恐怖";
+                case "strategy":
+                    return "策略";
+                case "flight":
+                case "flight simulation":
+                    return "飞行";
                 default:
                     return raw;
             }

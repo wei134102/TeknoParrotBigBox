@@ -70,6 +70,7 @@
       <SubType>Code</SubType>
     </Compile>
     <Compile Include="BooleanInverterConverter.cs" />
+    <Compile Include="NullToImageSourceConverter.cs" />
     <Compile Include="GamepadInput.cs" />
     <Compile Include="Localization.cs" />
     <Compile Include="Models\GameEntry.cs" />

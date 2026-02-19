@@ -6,11 +6,13 @@
         WindowStyle="None"
         WindowState="Maximized"
         Background="#111111"
+        PreviewKeyDown="Window_PreviewKeyDown"
         KeyDown="Window_KeyDown"
         Closing="Window_Closing">
     <Window.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVis" />
         <local:BooleanInverterConverter x:Key="BoolInvert" />
+        <local:NullToImageSourceConverter x:Key="NullToImageSource" />
 
         <!-- 绿色主操作按钮样式 -->
         <Style x:Key="GreenPrimaryButtonStyle" TargetType="Button">
@@ -44,43 +46,105 @@
         </Style>
     </Window.Resources>
     <Grid>
+        <Grid.RowDefinitions>
+            <!-- 顶部：分类栏（Pegasus 风格） -->
+            <RowDefinition Height="Auto" />
+            <!-- 中间：游戏封面 + 详情 -->
+            <RowDefinition Height="*" />
+            <!-- 底部：提示栏 -->
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
         <Grid.ColumnDefinitions>
-            <!-- 分类列表 -->
-            <ColumnDefinition Width="220" />
-            <!-- 当前分类下的游戏封面墙 -->
+            <!-- 游戏封面墙 -->
             <ColumnDefinition Width="2*" />
             <!-- 详情 + 预览 -->
             <ColumnDefinition Width="3*" />
         </Grid.ColumnDefinitions>
 
-        <!-- 最左侧：分类列表 -->
-        <Border Grid.Column="0" Margin="10" Background="#181818" CornerRadius="8">
-            <ListBox x:Name="CategoriesList"
-                     ItemsSource="{Binding Categories}"
-                     SelectedItem="{Binding SelectedCategory, Mode=TwoWay}"
-                     SelectionChanged="CategoriesList_SelectionChanged"
-                     Background="Transparent"
-                     BorderThickness="0"
-                     Foreground="White"
-                     ScrollViewer.VerticalScrollBarVisibility="Hidden">
+        <!-- 背景：当前选中游戏的封面做毛玻璃背景，模仿 Pegasus 风格 -->
+        <Image Grid.RowSpan="3" Grid.ColumnSpan="2"
+               Source="{Binding ElementName=GamesList, Path=SelectedItem.CoverImagePath, Converter={StaticResource NullToImageSource}}"
+               Stretch="UniformToFill"
+               Opacity="0.20"
+               RenderOptions.BitmapScalingMode="HighQuality"
+               IsHitTestVisible="False"
+               Panel.ZIndex="-1">
+            <Image.Effect>
+                <BlurEffect Radius="20" />
+            </Image.Effect>
+        </Image>
+
+        <!-- 顶部：横向分类栏，固定只显示约 7 个分类宽度，选中项居中、左右切换时轮动 -->
+        <Border Grid.Row="0" Grid.ColumnSpan="2" Margin="10,10,10,6" Background="#181818" CornerRadius="8" Padding="8,6">
+            <ScrollViewer x:Name="CategoriesScrollViewer"
+                          HorizontalScrollBarVisibility="Hidden"
+                          VerticalScrollBarVisibility="Disabled"
+                          MaxHeight="56"
+                          Width="920">
+                <ListBox x:Name="CategoriesList"
+                         ItemsSource="{Binding Categories}"
+                         SelectedItem="{Binding SelectedCategory, Mode=TwoWay}"
+                         SelectionChanged="CategoriesList_SelectionChanged"
+                         Background="Transparent"
+                         BorderThickness="0"
+                         Foreground="White"
+                         ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                         ScrollViewer.VerticalScrollBarVisibility="Disabled">
+                <!-- 选中项始终蓝色，不随焦点丢失变黑 -->
+                <ListBox.ItemContainerStyle>
+                    <Style TargetType="ListBoxItem">
+                        <Setter Property="Background" Value="Transparent" />
+                        <Setter Property="Template">
+                            <Setter.Value>
+                                <ControlTemplate TargetType="ListBoxItem">
+                                    <Border x:Name="Bd" Background="{TemplateBinding Background}" Padding="0">
+                                        <ContentPresenter />
+                                    </Border>
+                                    <ControlTemplate.Triggers>
+                                        <Trigger Property="IsSelected" Value="True">
+                                            <Setter TargetName="Bd" Property="Background" Value="#2196F3" />
+                                        </Trigger>
+                                    </ControlTemplate.Triggers>
+                                </ControlTemplate>
+                            </Setter.Value>
+                        </Setter>
+                    </Style>
+                </ListBox.ItemContainerStyle>
+                <ListBox.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <StackPanel Orientation="Horizontal" />
+                    </ItemsPanelTemplate>
+                </ListBox.ItemsPanel>
                 <ListBox.ItemTemplate>
                     <DataTemplate>
-                        <Border Margin="4"
-                                Padding="6"
-                                CornerRadius="4"
-                                Background="#252525">
+                        <Border Margin="4,0"
+                                Padding="14,8"
+                                CornerRadius="6"
+                                Background="#252525"
+                                Cursor="Hand">
+                            <Border.Style>
+                                <Style TargetType="Border">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsSelected, RelativeSource={RelativeSource AncestorType=ListBoxItem}}" Value="True">
+                                            <Setter Property="Background" Value="#2196F3" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Border.Style>
                             <TextBlock Text="{Binding Name}"
-                                       FontSize="14"
-                                       Foreground="White"
-                                       TextTrimming="CharacterEllipsis" />
-                        </Border>
-                    </DataTemplate>
+                                           FontSize="15"
+                                           FontWeight="SemiBold"
+                                           Foreground="White"
+                                           VerticalAlignment="Center" />
+                            </Border>
+                        </DataTemplate>
                 </ListBox.ItemTemplate>
-            </ListBox>
+                </ListBox>
+            </ScrollViewer>
         </Border>
 
-        <!-- 中间：当前分类下的游戏封面列表 -->
-        <Border Grid.Column="1" Margin="10" Background="#202020" CornerRadius="8">
+        <!-- 左侧：当前分类下的游戏封面列表 -->
+        <Border Grid.Row="1" Grid.Column="0" Margin="10,0,6,10" Background="#202020" CornerRadius="8">
             <ScrollViewer HorizontalScrollBarVisibility="Disabled"
                           VerticalScrollBarVisibility="Hidden">
                 <ListBox x:Name="GamesList"
@@ -106,6 +170,28 @@
                                     Background="#303030"
                                     BorderBrush="#505050"
                                     BorderThickness="1">
+                                <Border.Style>
+                                    <Style TargetType="Border">
+                                        <Setter Property="RenderTransformOrigin" Value="0.5,0.5" />
+                                        <Setter Property="RenderTransform">
+                                            <Setter.Value>
+                                                <ScaleTransform ScaleX="1.0" ScaleY="1.0" />
+                                            </Setter.Value>
+                                        </Setter>
+                                        <Style.Triggers>
+                                            <!-- 选中游戏时轻微放大并高亮边框，模仿 Pegasus 的选中效果 -->
+                                            <DataTrigger Binding="{Binding IsSelected, RelativeSource={RelativeSource AncestorType=ListBoxItem}}" Value="True">
+                                                <Setter Property="Background" Value="#404040" />
+                                                <Setter Property="BorderBrush" Value="#FFD27F" />
+                                                <Setter Property="RenderTransform">
+                                                    <Setter.Value>
+                                                        <ScaleTransform ScaleX="1.05" ScaleY="1.05" />
+                                                    </Setter.Value>
+                                                </Setter>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Border.Style>
                                 <Grid>
                                     <Grid.RowDefinitions>
                                         <RowDefinition Height="*" />
@@ -114,7 +200,7 @@
                                     <Image Grid.Row="0"
                                            Margin="6"
                                            Stretch="UniformToFill"
-                                           Source="{Binding CoverImagePath}"
+                                           Source="{Binding CoverImagePath, Converter={StaticResource NullToImageSource}}"
                                            SnapsToDevicePixels="True" />
                                     <!-- 收藏星标（叠加在图片之上） -->
                                     <TextBlock Text="★"
@@ -144,7 +230,7 @@
         </Border>
 
         <!-- 右侧：详情 + 预览区域 -->
-        <Border Grid.Column="2" Margin="10" Background="#181818" CornerRadius="8">
+        <Border Grid.Row="1" Grid.Column="1" Margin="6,0,10,10" Background="#181818" CornerRadius="8">
             <Grid Margin="16">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
@@ -175,7 +261,7 @@
                             CornerRadius="6">
                         <Image Margin="8"
                                Stretch="Uniform"
-                               Source="{Binding ElementName=GamesList, Path=SelectedItem.CoverImagePath}"
+                               Source="{Binding ElementName=GamesList, Path=SelectedItem.CoverImagePath, Converter={StaticResource NullToImageSource}}"
                                SnapsToDevicePixels="True" />
                     </Border>
 
@@ -186,9 +272,9 @@
                             CornerRadius="6"
                             BorderBrush="#404040"
                             BorderThickness="1">
-                        <Grid>
+                        <Grid x:Name="PreviewMediaHostGrid">
+                            <!-- Source 仅由代码设置；每 N 次加载会替换为新实例，避免 WPF MediaElement 多次切换后失效 -->
                             <MediaElement x:Name="PreviewMedia"
-                                          Source="{Binding ElementName=GamesList, Path=SelectedItem.VideoPath}"
                                           LoadedBehavior="Manual"
                                           UnloadedBehavior="Stop"
                                           Stretch="Uniform"
@@ -279,11 +365,11 @@
         </Border>
 
         <!-- 底部提示 + 总游戏数 -->
-        <DockPanel Grid.ColumnSpan="3"
-                   VerticalAlignment="Bottom"
+        <DockPanel Grid.Row="2" Grid.ColumnSpan="2"
+                   VerticalAlignment="Center"
                    HorizontalAlignment="Stretch"
-                   Margin="16">
-            <TextBlock x:Name="HintText" Text="↑↓←→ 选择    Enter/A 启动    Esc/B 退出    支持 XInput / DINPUT 手柄"
+                   Margin="16,8">
+            <TextBlock x:Name="HintText" Text="←→ 切换游戏   ↑↓ 切换分类    Enter/A 启动    Esc/B 退出"
                        Foreground="#BBBBBB"
                        FontSize="14"
                        VerticalAlignment="Center" />
