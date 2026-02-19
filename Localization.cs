@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Text.RegularExpressions;
 using Newtonsoft.Json;
 
 namespace TeknoParrotBigBox
@@ -86,7 +87,20 @@ namespace TeknoParrotBigBox
         };
 
         private static string _language = LangZh;
+        private static bool _skipVersionCheck;
         private static readonly string SettingsPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "BigBoxSettings.json");
+
+        /// <summary>为 true 时，启动 TeknoParrotUi 会追加 --skipversioncheck 参数以跳过版本检测。</summary>
+        public static bool SkipVersionCheck
+        {
+            get => _skipVersionCheck;
+            set
+            {
+                if (_skipVersionCheck == value) return;
+                _skipVersionCheck = value;
+                Save();
+            }
+        }
 
         public static string Language
         {
@@ -119,17 +133,25 @@ namespace TeknoParrotBigBox
 
         public static void Load()
         {
+            string json = null;
             try
             {
                 if (!File.Exists(SettingsPath)) return;
-                var json = File.ReadAllText(SettingsPath);
+                json = File.ReadAllText(SettingsPath);
                 var o = JsonConvert.DeserializeObject<Dictionary<string, string>>(json);
-                if (o != null && o.TryGetValue("Language", out var lang) && !string.IsNullOrWhiteSpace(lang))
-                    _language = lang.Equals(LangEn, StringComparison.OrdinalIgnoreCase) ? LangEn : LangZh;
+                if (o != null)
+                {
+                    if (o.TryGetValue("Language", out var lang) && !string.IsNullOrWhiteSpace(lang))
+                        _language = lang.Equals(LangEn, StringComparison.OrdinalIgnoreCase) ? LangEn : LangZh;
+                    if (o.TryGetValue("SkipVersionCheck", out var svc))
+                        _skipVersionCheck = string.Equals(svc, "true", StringComparison.OrdinalIgnoreCase);
+                }
             }
             catch
             {
-                // 忽略
+                // JSON 格式错误（如缺少逗号）时，仍尝试从文本中读取 SkipVersionCheck，避免因配置笔误导致无法跳过版本检测
+                if (!string.IsNullOrEmpty(json) && Regex.IsMatch(json, @"SkipVersionCheck\s*:\s*""true""", RegexOptions.IgnoreCase))
+                    _skipVersionCheck = true;
             }
         }
 
@@ -137,7 +159,11 @@ namespace TeknoParrotBigBox
         {
             try
             {
-                var o = new Dictionary<string, string> { ["Language"] = _language };
+                var o = new Dictionary<string, string>
+                {
+                    ["Language"] = _language,
+                    ["SkipVersionCheck"] = _skipVersionCheck ? "true" : "false"
+                };
                 var json = JsonConvert.SerializeObject(o, Formatting.Indented);
                 File.WriteAllText(SettingsPath, json);
             }

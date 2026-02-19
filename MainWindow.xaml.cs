@@ -83,7 +83,7 @@ namespace TeknoParrotBigBox
             Localization.Load();
             LoadGamesFromFolders();
             ApplyLanguage();
-            Localization.LanguageChanged += (s, ev) => ApplyLanguage();
+            Localization.LanguageChanged += (s, ev) => { ApplyLanguage(); LoadGamesFromFolders(); };
 
             // 自动滚动游戏介绍
             _descriptionScrollTimer = new DispatcherTimer
@@ -1177,7 +1177,7 @@ namespace TeknoParrotBigBox
         }
 
         /// <summary>
-        /// 根据元数据/LaunchBox 的 genre 生成“中文分类名称”。
+        /// 根据元数据/LaunchBox 的 genre 生成分类名称（中文或英文由当前语言决定）。
         /// </summary>
         private static string GetLocalizedCategory(string metaGenre, string lbGenre)
         {
@@ -1189,83 +1189,135 @@ namespace TeknoParrotBigBox
                 raw = lbGenre.Trim();
 
             if (string.IsNullOrWhiteSpace(raw))
-                return "未分类";
+                return Localization.IsEnglish ? "Uncategorized" : "未分类";
 
-            // 如果本身已经包含中文字符，就直接用。
+            if (Localization.IsEnglish)
+            {
+                // 英文：已有中文则映射为英文，否则按英文 key 统一成标准英文名
+                if (raw.Any(c => c >= 0x4e00 && c <= 0x9fff))
+                    return MapCategoryChineseToEnglish(raw);
+                return GetCategoryNameEnglish(raw);
+            }
+
+            // 中文：本身已是中文则直接返回
             if (raw.Any(c => c >= 0x4e00 && c <= 0x9fff))
                 return raw;
 
-            // 常见 LaunchBox / TeknoParrot 英文类型 → 中文（尽量覆盖未汉化分类）
+            return GetCategoryNameChinese(raw);
+        }
+
+        private static string GetCategoryNameEnglish(string raw)
+        {
             switch (raw.ToLowerInvariant())
             {
-                case "action":
-                    return "动作";
-                case "fighting":
-                    return "格斗";
+                case "action": return "Action";
+                case "fighting": return "Fighting";
                 case "racing":
-                case "driving":
-                    return "竞速";
+                case "driving": return "Racing";
                 case "shooter":
                 case "light gun":
                 case "first person shooter":
-                case "fps":
-                    return "射击";
+                case "fps": return "Shooter";
                 case "music":
-                case "music/rhythm":
-                    return "音乐";
-                case "sports":
-                    return "体育";
+                case "music/rhythm": return "Music";
+                case "sports": return "Sports";
                 case "platform":
-                case "platformer":
-                    return "平台";
-                case "puzzle":
-                    return "益智";
-                case "rhythm":
-                    return "节奏";
+                case "platformer": return "Platform";
+                case "puzzle": return "Puzzle";
+                case "rhythm": return "Rhythm";
                 case "beat 'em up":
                 case "beat'em up":
-                case "beat em up":
-                    return "横版过关";
+                case "beat em up": return "Beat 'em up";
                 case "adventure":
-                case "adventure game":
-                    return "冒险";
+                case "adventure game": return "Adventure";
                 case "simulation":
-                case "sim":
-                    return "模拟";
+                case "sim": return "Simulation";
                 case "role-playing":
                 case "roleplaying":
-                case "rpg":
-                    return "角色扮演";
-                case "arcade":
-                    return "街机";
+                case "rpg": return "RPG";
+                case "arcade": return "Arcade";
                 case "misc":
                 case "miscellaneous":
-                case "other":
-                    return "其他";
-                case "pinball":
-                    return "弹珠";
+                case "other": return "Other";
+                case "pinball": return "Pinball";
                 case "card":
-                case "card game":
-                    return "卡牌";
+                case "card game": return "Card";
                 case "board":
-                case "board game":
-                    return "桌游";
-                case "trivia":
-                    return "问答";
-                case "compilation":
-                    return "合集";
+                case "board game": return "Board";
+                case "trivia": return "Trivia";
+                case "compilation": return "Compilation";
                 case "party":
-                case "party game":
-                    return "聚会";
-                case "horror":
-                    return "恐怖";
-                case "strategy":
-                    return "策略";
+                case "party game": return "Party";
+                case "horror": return "Horror";
+                case "strategy": return "Strategy";
                 case "flight":
-                case "flight simulation":
-                    return "飞行";
-                default:
-                    return raw;
+                case "flight simulation": return "Flight";
+                default: return raw;
+            }
+        }
+
+        private static string MapCategoryChineseToEnglish(string raw)
+        {
+            var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["动作"] = "Action", ["格斗"] = "Fighting", ["竞速"] = "Racing", ["射击"] = "Shooter",
+                ["音乐"] = "Music", ["体育"] = "Sports", ["平台"] = "Platform", ["益智"] = "Puzzle",
+                ["节奏"] = "Rhythm", ["横版过关"] = "Beat 'em up", ["冒险"] = "Adventure", ["模拟"] = "Simulation",
+                ["角色扮演"] = "RPG", ["街机"] = "Arcade", ["其他"] = "Other", ["弹珠"] = "Pinball",
+                ["卡牌"] = "Card", ["桌游"] = "Board", ["问答"] = "Trivia", ["合集"] = "Compilation",
+                ["聚会"] = "Party", ["恐怖"] = "Horror", ["策略"] = "Strategy", ["飞行"] = "Flight",
+                ["未分类"] = "Uncategorized"
+            };
+            return map.TryGetValue(raw.Trim(), out var en) ? en : raw;
+        }
+
+        private static string GetCategoryNameChinese(string raw)
+        {
+            switch (raw.ToLowerInvariant())
+            {
+                case "action": return "动作";
+                case "fighting": return "格斗";
+                case "racing":
+                case "driving": return "竞速";
+                case "shooter":
+                case "light gun":
+                case "first person shooter":
+                case "fps": return "射击";
+                case "music":
+                case "music/rhythm": return "音乐";
+                case "sports": return "体育";
+                case "platform":
+                case "platformer": return "平台";
+                case "puzzle": return "益智";
+                case "rhythm": return "节奏";
+                case "beat 'em up":
+                case "beat'em up":
+                case "beat em up": return "横版过关";
+                case "adventure":
+                case "adventure game": return "冒险";
+                case "simulation":
+                case "sim": return "模拟";
+                case "role-playing":
+                case "roleplaying":
+                case "rpg": return "角色扮演";
+                case "arcade": return "街机";
+                case "misc":
+                case "miscellaneous":
+                case "other": return "其他";
+                case "pinball": return "弹珠";
+                case "card":
+                case "card game": return "卡牌";
+                case "board":
+                case "board game": return "桌游";
+                case "trivia": return "问答";
+                case "compilation": return "合集";
+                case "party":
+                case "party game": return "聚会";
+                case "horror": return "恐怖";
+                case "strategy": return "策略";
+                case "flight":
+                case "flight simulation": return "飞行";
+                default: return raw;
             }
         }
 
