@@ -265,13 +265,19 @@
                                SnapsToDevicePixels="True" />
                     </Border>
 
-                    <!-- 视频预览区域 -->
-                    <Border Grid.Column="1"
+                    <!-- 视频预览区域：无视频时右键可添加视频 -->
+                    <Border x:Name="PreviewVideoBorder"
+                            Grid.Column="1"
                             Margin="8,0,0,0"
                             Background="#202020"
                             CornerRadius="6"
                             BorderBrush="#404040"
                             BorderThickness="1">
+                        <Border.ContextMenu>
+                            <ContextMenu x:Name="PreviewVideoContextMenu" Opened="PreviewVideoContextMenu_Opened">
+                                <MenuItem x:Name="AddVideoMenuItem" Header="添加视频" Click="AddVideoMenuItem_Click" />
+                            </ContextMenu>
+                        </Border.ContextMenu>
                         <Grid x:Name="PreviewMediaHostGrid">
                             <!-- Source 仅由代码设置；每 N 次加载会替换为新实例，避免 WPF MediaElement 多次切换后失效 -->
                             <MediaElement x:Name="PreviewMedia"

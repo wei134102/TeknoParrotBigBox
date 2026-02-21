@@ -9,6 +9,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using Microsoft.Win32;
 using Newtonsoft.Json;
 using System.Windows.Threading;
 using TeknoParrotBigBox.Models;
@@ -1020,6 +1021,8 @@ namespace TeknoParrotBigBox
             return null;
         }
 
+        private static readonly string[] VideoExtensions = { ".mp4", ".avi", ".webm", ".mkv", ".wmv", ".m4v" };
+
         private static string ResolveVideoPath(string videosDir, string profileId, string displayName)
         {
             try
@@ -1030,16 +1033,19 @@ namespace TeknoParrotBigBox
                 string TryVideo(string baseName)
                 {
                     if (string.IsNullOrWhiteSpace(baseName)) return null;
-                    var mp4 = Path.Combine(videosDir, baseName + ".mp4");
-                    if (File.Exists(mp4)) return mp4;
+                    foreach (var ext in VideoExtensions)
+                    {
+                        var path = Path.Combine(videosDir, baseName + ext);
+                        if (File.Exists(path)) return path;
+                    }
                     return null;
                 }
 
-                // 1) 优先 profileId.mp4
+                // 1) 优先 profileId
                 var byProfile = TryVideo(profileId);
                 if (!string.IsNullOrEmpty(byProfile)) return byProfile;
 
-                // 2) 其次按 bat 文件名.mp4
+                // 2) 其次按 bat 文件名
                 var byDisplay = TryVideo(displayName);
                 if (!string.IsNullOrEmpty(byDisplay)) return byDisplay;
 
@@ -1053,6 +1059,70 @@ namespace TeknoParrotBigBox
             }
 
             return null;
+        }
+
+        private void PreviewVideoContextMenu_Opened(object sender, RoutedEventArgs e)
+        {
+            var selected = GamesList?.SelectedItem as GameEntry;
+            AddVideoMenuItem.IsEnabled = selected != null && !string.IsNullOrWhiteSpace(selected.ProfileId) && string.IsNullOrWhiteSpace(selected.VideoPath);
+        }
+
+        private void AddVideoMenuItem_Click(object sender, RoutedEventArgs e)
+        {
+            var selected = GamesList?.SelectedItem as GameEntry;
+            if (selected == null || string.IsNullOrWhiteSpace(selected.ProfileId))
+            {
+                MessageBox.Show("请先选中一个游戏。", "添加视频", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+            if (!string.IsNullOrWhiteSpace(selected.VideoPath))
+            {
+                MessageBox.Show("当前游戏已有预览视频。", "添加视频", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            var baseDir = AppDomain.CurrentDomain.BaseDirectory;
+            var videosDir = Path.Combine(baseDir, "Media", "Videos");
+            try
+            {
+                if (!Directory.Exists(videosDir))
+                    Directory.CreateDirectory(videosDir);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("无法创建视频目录：\n" + ex.Message, "添加视频", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            var dlg = new OpenFileDialog
+            {
+                Title = "选择预览视频",
+                Filter = "视频文件|*.mp4;*.avi;*.webm;*.mkv;*.wmv;*.m4v|所有文件|*.*",
+                FilterIndex = 1
+            };
+            if (dlg.ShowDialog() != true)
+                return;
+
+            var sourcePath = dlg.FileName;
+            var ext = Path.GetExtension(sourcePath);
+            if (string.IsNullOrEmpty(ext))
+                ext = ".mp4";
+            var destFileName = selected.ProfileId + ext;
+            var destPath = Path.Combine(videosDir, destFileName);
+
+            try
+            {
+                File.Copy(sourcePath, destPath, overwrite: true);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("复制视频失败：\n" + ex.Message, "添加视频", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            selected.VideoPath = destPath;
+            StartPreviewForCurrentGame();
+            MessageBox.Show("已添加预览视频：\n" + destFileName, "添加视频", MessageBoxButton.OK, MessageBoxImage.Information);
         }
 
         private void DescriptionScrollTimer_Tick(object sender, EventArgs e)

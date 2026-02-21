@@ -50,6 +50,10 @@
   从 LaunchBox 复制来的原始封面图片，文件名为「游戏名-01.png」之类，  
   由 `rename_covers_from_box3d.py` 扫描并复制为：
 
+- `coverdata\`  
+  你新收集的封面图片（任意命名），由 `rename_covers_from_coverdata.py` 按 profileId 匹配并复制。  
+  详见 `coverdata\README.md`。
+
 - `Media\Covers\{profileId}.png` / `.jpg`  
   BigBox 真正使用的封面（profileId 命名）。
 
@@ -86,6 +90,7 @@
    ```bash
    python extract_launchbox_descriptions.py
    python rename_covers_from_box3d.py
+   python rename_covers_from_coverdata.py   # 若有 coverdata 中的新图片
    python rename_videos_from_launchbox.py
    ```
 5. 直接运行 `TeknoParrotBigBox.exe` 进入前端。

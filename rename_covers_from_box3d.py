@@ -24,22 +24,31 @@
     文件: "化解危机 5-01.png" / "化解危机 5-02.png"
   会优先选 -01，找不到再选任意同名前缀的文件。
 - profileId 从 bat 第一行的 --profile=XXXX.xml 解析为 XXXX。
+- 若没有 bat 目录，则从 UserProfiles/UserProfiles_by_genre 的 XML 与（可选）launchbox_descriptions.json
+  按「标题/游戏名」匹配 profileId。
 """
 
 from __future__ import annotations
 
 import io
+import json
 import os
 import re
 import shutil
 import sys
+import unicodedata
 import xml.etree.ElementTree as ET
-from typing import Dict, Optional, List
+from typing import Dict, Optional, List, Tuple
 
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 LAUNCHBOX_XML = os.path.join(BASE_DIR, "Teknoparrot.xml")
 BAT_DIR = os.path.join(BASE_DIR, "bat")
+USER_PROFILES_DIRS = [
+    os.path.join(BASE_DIR, "UserProfiles"),
+    os.path.join(BASE_DIR, "UserProfiles_by_genre"),
+]
+LAUNCHBOX_DESCRIPTIONS_JSON = os.path.join(BASE_DIR, "launchbox_descriptions.json")
 BOX3D_DIR = os.path.join(BASE_DIR, "covers", "Box - 3D")
 ARCADE_DIR = os.path.join(BASE_DIR, "covers", "Arcade - Cabinet")
 DEST_COVERS_DIR = os.path.join(BASE_DIR, "Media", "Covers")
@@ -58,6 +67,77 @@ def normalize_title(name: str) -> str:
     if m:
         base = m.group(1)
     return base.strip()
+
+
+def normalize_for_match(s: str) -> str:
+    """规范化字符串用于匹配：去空格、转小写、去标点、统一 Unicode"""
+    if not s:
+        return ""
+    s = unicodedata.normalize("NFKC", s)
+    s = re.sub(r"[\s\-_.]+", "", s.lower())
+    s = re.sub(r"[^\w\u4e00-\u9fff]", "", s)
+    return s
+
+
+def _game_name_from_path(game_path: str) -> Optional[str]:
+    """从 GamePath 提取游戏文件夹名。"""
+    if not game_path:
+        return None
+    path = game_path.replace("/", "\\")
+    parts = path.split("\\")
+    for i in range(len(parts) - 1, -1, -1):
+        p = parts[i].strip()
+        if p and not p.lower().endswith((".exe", ".bat")):
+            return p
+    return None
+
+
+def load_title_to_profile_without_bat() -> Dict[str, str]:
+    """
+    在无 bat 时使用：从 UserProfiles 与 launchbox_descriptions.json 构建
+    normalized_title -> profileId，用于按 LaunchBox 标题匹配 profileId。
+    """
+    mapping: Dict[str, str] = {}
+
+    # 1) UserProfiles：profileId + GamePath 文件夹名 -> profileId
+    for profiles_dir in USER_PROFILES_DIRS:
+        if not os.path.isdir(profiles_dir):
+            continue
+        for root, _dirs, files in os.walk(profiles_dir):
+            for f in files:
+                if not f.lower().endswith(".xml"):
+                    continue
+                profile_id = os.path.splitext(f)[0]
+                if not profile_id:
+                    continue
+                mapping[normalize_for_match(profile_id)] = profile_id
+                xml_path = os.path.join(root, f)
+                try:
+                    tree = ET.parse(xml_path)
+                    for elem in tree.getroot().iter():
+                        if elem.tag == "GamePath" and elem.text:
+                            name = _game_name_from_path(elem.text.strip())
+                            if name:
+                                mapping[normalize_for_match(name)] = profile_id
+                            break
+                except Exception:
+                    pass
+
+    # 2) launchbox_descriptions.json：title -> profileId
+    if os.path.isfile(LAUNCHBOX_DESCRIPTIONS_JSON):
+        try:
+            with io.open(LAUNCHBOX_DESCRIPTIONS_JSON, "r", encoding="utf-8") as fp:
+                data = json.load(fp)
+            for pid, desc in (data or {}).items():
+                if not isinstance(desc, dict):
+                    continue
+                title = (desc.get("title") or "").strip()
+                if title:
+                    mapping[normalize_for_match(title)] = pid
+        except Exception:
+            pass
+
+    return mapping
 
 
 def load_image_dir(root_dir: str) -> Dict[str, List[str]]:
@@ -150,9 +230,15 @@ def main() -> int:
     if not lb_games:
         return 1
 
-    if not os.path.isdir(BAT_DIR):
-        print("未找到 bat 目录:", BAT_DIR)
-        return 1
+    use_bat = os.path.isdir(BAT_DIR)
+    title_to_profile: Dict[str, str] = {}
+    if not use_bat:
+        print("未找到 bat 目录，改用 UserProfiles / launchbox_descriptions 按标题匹配 profileId")
+        title_to_profile = load_title_to_profile_without_bat()
+        if not title_to_profile:
+            print("也未找到 UserProfiles 或 launchbox_descriptions.json，无法解析 profileId")
+            return 1
+        print("已加载标题->profileId 映射数量:", len(set(title_to_profile.values())))
 
     # 先加载 Box - 3D 封面
     mapping: Dict[str, List[str]] = {}
@@ -195,21 +281,27 @@ def main() -> int:
 
         src_image = choose_best_image(candidates)
 
-        # 2) 根据 ApplicationPath 找到对应 bat 文件
-        app_path = info["app_path"]
-        bat_name = os.path.basename(app_path)
-        local_bat = os.path.join(BAT_DIR, bat_name)
-        if not os.path.isfile(local_bat):
-            skipped_no_bat += 1
-            continue
+        # 2) 解析 profileId：优先 bat，否则按标题从 UserProfiles/launchbox_descriptions 匹配
+        profile_id = None
+        if use_bat:
+            app_path = info["app_path"]
+            bat_name = os.path.basename(app_path)
+            local_bat = os.path.join(BAT_DIR, bat_name)
+            if not os.path.isfile(local_bat):
+                skipped_no_bat += 1
+                continue
+            profile_id = extract_profile_id_from_bat(local_bat)
+            if not profile_id:
+                skipped_no_profile += 1
+                continue
+        else:
+            norm_key = normalize_for_match(norm_title)
+            profile_id = title_to_profile.get(norm_key)
+            if not profile_id:
+                skipped_no_profile += 1
+                continue
 
-        # 3) 从 bat 解析 profileId
-        profile_id = extract_profile_id_from_bat(local_bat)
-        if not profile_id:
-            skipped_no_profile += 1
-            continue
-
-        # 4) 复制为 Media/Covers/{profileId}.png
+        # 3) 复制为 Media/Covers/{profileId}.png
         dest_ext = os.path.splitext(src_image)[1].lower()
         if dest_ext not in [".png", ".jpg", ".jpeg"]:
             dest_ext = ".png"
