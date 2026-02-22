@@ -48,6 +48,25 @@
     </Reference>
   </ItemGroup>
   <ItemGroup>
+    <PackageReference Include="LibVLCSharp">
+      <Version>3.8.5</Version>
+    </PackageReference>
+    <PackageReference Include="LibVLCSharp.WPF">
+      <Version>3.8.5</Version>
+    </PackageReference>
+    <PackageReference Include="VideoLAN.LibVLC.Windows">
+      <Version>3.0.20</Version>
+    </PackageReference>
+  </ItemGroup>
+  <ItemGroup>
+    <Reference Include="LibVLCSharp">
+      <HintPath>$(UserProfile)\.nuget\packages\libvlcsharp\3.8.5\lib\net40\LibVLCSharp.dll</HintPath>
+    </Reference>
+    <Reference Include="LibVLCSharp.WPF">
+      <HintPath>$(UserProfile)\.nuget\packages\libvlcsharp.wpf\3.8.5\lib\net461\LibVLCSharp.WPF.dll</HintPath>
+    </Reference>
+  </ItemGroup>
+  <ItemGroup>
     <ApplicationDefinition Include="App.xaml">
       <Generator>MSBuild:Compile</Generator>
       <SubType>Designer</SubType>
@@ -61,6 +80,7 @@
       <Generator>MSBuild:Compile</Generator>
       <SubType>Designer</SubType>
     </Page>
+    <Compile Include="AppLog.cs" />
     <Compile Include="App.xaml.cs">
       <DependentUpon>App.xaml</DependentUpon>
       <SubType>Code</SubType>
@@ -72,6 +92,7 @@
     <Compile Include="BooleanInverterConverter.cs" />
     <Compile Include="NullToImageSourceConverter.cs" />
     <Compile Include="GamepadInput.cs" />
+    <Compile Include="BigBoxSettings.cs" />
     <Compile Include="Localization.cs" />
     <Compile Include="Models\GameEntry.cs" />
     <Compile Include="SettingsWindow.xaml.cs">

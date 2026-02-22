@@ -13,6 +13,7 @@ using Microsoft.Win32;
 using Newtonsoft.Json;
 using System.Windows.Threading;
 using TeknoParrotBigBox.Models;
+using LibVLCSharp.Shared;
 
 namespace TeknoParrotBigBox
 {
@@ -26,6 +27,7 @@ namespace TeknoParrotBigBox
         private readonly DispatcherTimer _descriptionScrollTimer;
         private readonly DispatcherTimer _gamepadTimer;
         private readonly DispatcherTimer _previewDelayTimer;
+        private DispatcherTimer _showPreviewTimer;
         private GamepadInput.GamepadState _lastGamepadState;
         private double _descriptionScrollOffset;
         private bool _isDescriptionHovered;
@@ -33,10 +35,14 @@ namespace TeknoParrotBigBox
         private bool _autoMutedForGame;
         private Process _currentGameProcess;
         private bool _categoryPreviewRetryScheduled;
-        /// <summary>当前用于预览的 MediaElement，每 N 次加载会替换为新实例，避免 WPF 单实例多次 Source 切换后失效。</summary>
-        private System.Windows.Controls.MediaElement _previewMedia;
-        private int _previewLoadCount;
-        private const int PreviewMediaReplaceInterval = 10;
+        /// <summary>LibVLC 与预览播放器（兼容更多视频格式）。</summary>
+        private LibVLC _libVLC;
+        private LibVLCSharp.Shared.MediaPlayer _previewVlcPlayer;
+        private Media _currentPreviewMedia;
+        /// <summary>上一支已成功开始播放的预览视频文件大小(MB)，用于大文件后延迟加载下一支。</summary>
+        private double _lastPlayedPreviewFileSizeMb;
+        /// <summary>当前一次 Play() 对应的文件大小(MB)，在 Playing 时写回 _lastPlayedPreviewFileSizeMb。</summary>
+        private double _currentPreviewFileSizeMb;
 
         private string _windowTitle = "TeknoParrot BigBox";
         public string WindowTitle
@@ -102,85 +108,155 @@ namespace TeknoParrotBigBox
             _gamepadTimer.Tick += GamepadTimer_Tick;
             _gamepadTimer.Start();
 
-            // 预览视频延迟播放，避免快速切换游戏时频繁起停，模仿 Pegasus 的预览节奏
+            // 预览视频延迟播放：只有选中项停留超过此时间才加载视频，快速滚轮切换时不会逐个起播
+            const int PreviewDelayMs = 500;
             _previewDelayTimer = new DispatcherTimer
             {
-                Interval = TimeSpan.FromMilliseconds(250)
+                Interval = TimeSpan.FromMilliseconds(PreviewDelayMs)
             };
             _previewDelayTimer.Tick += PreviewDelayTimer_Tick;
-            _previewMedia = PreviewMedia;
+            if (PreviewVideoView != null)
+                PreviewVideoView.Loaded += PreviewVideoView_Loaded;
         }
 
-        /// <summary>每 N 次加载后替换为新 MediaElement 实例，避免 WPF 单实例多次 Source 切换后不再播放。</summary>
-        private void ReplacePreviewMediaElementIfNeeded()
+        private void PreviewVideoView_Loaded(object sender, RoutedEventArgs e)
         {
-            if (PreviewMediaHostGrid == null || _previewMedia == null) return;
             try
             {
-                _previewMedia.Stop();
-                _previewMedia.Source = null;
-                PreviewMediaHostGrid.Children.Remove(_previewMedia);
-                var newMedia = new System.Windows.Controls.MediaElement
-                {
-                    Stretch = Stretch.Uniform,
-                    Volume = _isMuted ? 0.0 : 0.5,
-                    LoadedBehavior = System.Windows.Controls.MediaState.Manual,
-                    UnloadedBehavior = System.Windows.Controls.MediaState.Stop
-                };
-                PreviewMediaHostGrid.Children.Insert(0, newMedia);
-                _previewMedia = newMedia;
-                _previewLoadCount = 0;
+                Core.Initialize();
+                _libVLC = new LibVLC();
+                _previewVlcPlayer = new LibVLCSharp.Shared.MediaPlayer(_libVLC);
+                PreviewVideoView.MediaPlayer = _previewVlcPlayer;
+                _previewVlcPlayer.Volume = _isMuted ? 0 : 50;
+                _previewVlcPlayer.Playing += PreviewVlc_Playing;
+                _previewVlcPlayer.EncounteredError += PreviewVlc_EncounteredError;
+                _previewVlcPlayer.EndReached += PreviewVlc_EndReached;
+                VideoLog("LibVLC 预览播放器已初始化");
+                StartPreviewForCurrentGame();
             }
-            catch { }
+            catch (Exception ex)
+            {
+                VideoLog("LibVLC 初始化异常: " + ex.Message);
+            }
+        }
+
+        private void PreviewVlc_Playing(object sender, EventArgs e)
+        {
+            _lastPlayedPreviewFileSizeMb = _currentPreviewFileSizeMb;
+            VideoLog("VLC Playing: 媒体已开始播放 (记录上一支=" + _lastPlayedPreviewFileSizeMb.ToString("F1") + "MB)");
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                _showPreviewTimer?.Stop();
+                _showPreviewTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(200) };
+                _showPreviewTimer.Tick += (s, ev) =>
+                {
+                    _showPreviewTimer.Stop();
+                    if (PreviewVideoView != null) PreviewVideoView.Opacity = 1;
+                };
+                _showPreviewTimer.Start();
+            }));
+        }
+
+        private void PreviewVlc_EncounteredError(object sender, EventArgs e)
+        {
+            VideoLog("VLC EncounteredError: 播放失败");
+        }
+
+        private void PreviewVlc_EndReached(object sender, EventArgs e)
+        {
+            if (_previewVlcPlayer == null || _currentPreviewMedia == null) return;
+            if (_previewVlcPlayer.Media == _currentPreviewMedia)
+                _previewVlcPlayer.Play(_currentPreviewMedia);
+        }
+
+        private static void VideoLog(string message)
+        {
+            var line = "[视频] " + message;
+            Debug.WriteLine(line);
+            AppLog.WriteLine(line);
+        }
+
+        private void DoPreviewLoad(Uri uri, GameEntry selected, double currentFileSizeMb)
+        {
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                if (_previewVlcPlayer == null)
+                {
+                    VideoLog("DoPreviewLoad: _previewVlcPlayer 未初始化");
+                    return;
+                }
+                var cur = GamesList?.SelectedItem as GameEntry;
+                if (cur != selected || string.IsNullOrWhiteSpace(cur?.VideoPath))
+                {
+                    VideoLog("选择已变更或无视频，跳过本次加载");
+                    return;
+                }
+                try
+                {
+                    _showPreviewTimer?.Stop();
+                    if (PreviewVideoView != null) PreviewVideoView.Opacity = 0;
+                    var path = uri.IsFile ? uri.LocalPath : uri.ToString();
+                    _previewVlcPlayer.Stop();
+                    _currentPreviewMedia?.Dispose();
+                    _currentPreviewMedia = new Media(_libVLC, path, FromType.FromPath);
+                    _currentPreviewFileSizeMb = currentFileSizeMb;
+                    _previewVlcPlayer.Volume = _isMuted ? 0 : 50;
+                    _previewVlcPlayer.Play(_currentPreviewMedia);
+                    VideoLog("VLC Play: " + path + " (约" + currentFileSizeMb.ToString("F1") + "MB)");
+                }
+                catch (Exception ex)
+                {
+                    VideoLog("DoPreviewLoad 异常: " + ex.Message);
+                }
+            }), DispatcherPriority.Background);
         }
 
         private void PreviewDelayTimer_Tick(object sender, EventArgs e)
         {
             _previewDelayTimer.Stop();
-
-            if (_previewMedia == null)
-                return;
-
-            try
+            VideoLog("Tick 触发");
+            if (_previewVlcPlayer == null) return;
+            var selected = GamesList.SelectedItem as GameEntry;
+            Dispatcher.BeginInvoke(new Action(() =>
             {
-                var selected = GamesList.SelectedItem as GameEntry;
-                if (selected != null && !string.IsNullOrWhiteSpace(selected.VideoPath))
+                try
                 {
-                    var path = selected.VideoPath.Trim();
-                    Uri uri = Path.IsPathRooted(path)
-                        ? new Uri(path, UriKind.Absolute)
-                        : new Uri(Path.GetFullPath(path), UriKind.Absolute);
-                    _previewMedia.Stop();
-                    _previewMedia.Source = null;
-                    Dispatcher.BeginInvoke(new Action(() =>
+                    if (selected != null && !string.IsNullOrWhiteSpace(selected.VideoPath))
                     {
-                        if (_previewMedia == null) return;
-                        var cur = GamesList?.SelectedItem as GameEntry;
-                        if (cur != selected || string.IsNullOrWhiteSpace(cur?.VideoPath)) return;
-                        try
-                        {
-                            _previewLoadCount++;
-                            if (_previewLoadCount >= PreviewMediaReplaceInterval)
-                                ReplacePreviewMediaElementIfNeeded();
-                            if (_previewMedia == null) return;
-                            _previewMedia.Source = uri;
-                            _previewMedia.Volume = _isMuted ? 0.0 : 0.5;
-                            _previewMedia.Position = TimeSpan.Zero;
-                            _previewMedia.Play();
-                        }
+                        var path = selected.VideoPath.Trim();
+                        var fileSizeMb = 0.0;
+                        try { if (File.Exists(path)) fileSizeMb = new FileInfo(path).Length / (1024.0 * 1024.0); }
                         catch { }
-                    }), DispatcherPriority.Loaded);
+                        Uri uri = Path.IsPathRooted(path)
+                            ? new Uri(path, UriKind.Absolute)
+                            : new Uri(Path.GetFullPath(path), UriKind.Absolute);
+                        VideoLog("准备加载: " + path + " (ProfileId=" + (selected.ProfileId ?? "") + ", 约" + fileSizeMb.ToString("F1") + "MB)");
+                        _previewVlcPlayer.Stop();
+                        if (fileSizeMb > 50)
+                        {
+                            VideoLog("大文件(" + fileSizeMb.ToString("F0") + "MB)，延迟 600ms 后加载");
+                            var delayTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(600) };
+                            delayTimer.Tick += (s, ev) =>
+                            {
+                                delayTimer.Stop();
+                                VideoLog("延迟结束，开始加载");
+                                DoPreviewLoad(uri, selected, fileSizeMb);
+                            };
+                            delayTimer.Start();
+                        }
+                        else
+                            DoPreviewLoad(uri, selected, fileSizeMb);
+                    }
+                    else
+                    {
+                        VideoLog("无视频路径，Stop");
+                        _showPreviewTimer?.Stop();
+                        _previewVlcPlayer.Stop();
+                        if (PreviewVideoView != null) PreviewVideoView.Opacity = 0;
+                    }
                 }
-                else
-                {
-                    _previewMedia.Stop();
-                    _previewMedia.Source = null;
-                }
-            }
-            catch
-            {
-                // 忽略 MediaElement 的状态异常
-            }
+                catch (Exception ex) { VideoLog("PreviewDelayTimer_Tick 异常: " + ex.Message); }
+            }), DispatcherPriority.Background);
         }
 
         private void GamepadTimer_Tick(object sender, EventArgs e)
@@ -288,17 +364,56 @@ namespace TeknoParrotBigBox
         }
 
         /// <summary>
+        /// 解析封面/视频目录。支持两种自定义路径：1) 指向“Media 的上级”（内含 Media\Covers、Media\Videos）；2) 指向 Media 文件夹本身（内含 Covers、Videos）。
+        /// </summary>
+        private static void ResolveMediaDirs(string baseDir, out string coversDir, out string videosDir)
+        {
+            var defaultCovers = Path.Combine(baseDir, "Media", "Covers");
+            var defaultVideos = Path.Combine(baseDir, "Media", "Videos");
+            if (string.IsNullOrWhiteSpace(BigBoxSettings.MediaPath))
+            {
+                coversDir = defaultCovers;
+                videosDir = defaultVideos;
+                return;
+            }
+            var custom = BigBoxSettings.MediaPath.Trim();
+            if (!Directory.Exists(custom))
+            {
+                coversDir = defaultCovers;
+                videosDir = defaultVideos;
+                return;
+            }
+            var withMediaCovers = Path.Combine(custom, "Media", "Covers");
+            var directCovers = Path.Combine(custom, "Covers");
+            if (Directory.Exists(withMediaCovers))
+            {
+                coversDir = withMediaCovers;
+                videosDir = Path.Combine(custom, "Media", "Videos");
+            }
+            else if (Directory.Exists(directCovers))
+            {
+                coversDir = directCovers;
+                videosDir = Path.Combine(custom, "Videos");
+            }
+            else
+            {
+                coversDir = defaultCovers;
+                videosDir = defaultVideos;
+            }
+        }
+
+        /// <summary>
         /// 从 UserProfiles（优先）/ bat / Metadata / Icons / Media\Covers / Media\Videos / launchbox_descriptions.json 加载游戏与分类。
         /// </summary>
         private void LoadGamesFromFolders()
         {
             var baseDir = AppDomain.CurrentDomain.BaseDirectory;
+            string coversDir, videosDir;
+            ResolveMediaDirs(baseDir, out coversDir, out videosDir);
             var userProfilesDir = Path.Combine(baseDir, "UserProfiles");
             var batDir = Path.Combine(baseDir, "bat");
             var metadataDir = Path.Combine(baseDir, "Metadata");
             var iconsDir = Path.Combine(baseDir, "Icons");
-            var coversDir = Path.Combine(baseDir, "Media", "Covers");
-            var videosDir = Path.Combine(baseDir, "Media", "Videos");
             var launchboxJsonPath = Path.Combine(baseDir, "launchbox_descriptions.json");
 
             // 1) 优先使用官方 UserProfiles 目录（.xml 文件名 = profileId），比 bat 更可靠
@@ -603,16 +718,16 @@ namespace TeknoParrotBigBox
                 return;
             ScrollCategoryIntoView();
             _previewDelayTimer.Stop();
-            // 只 Stop 不置空 Source，避免多次切换分类后 MediaElement 异常导致全部分类黑屏
-            if (_previewMedia != null) { try { _previewMedia.Stop(); } catch { } }
             _categoryPreviewRetryScheduled = false;
-            // 延后到 ApplicationIdle，确保 SelectedCategory.Games 绑定到 GamesList 已完成，再设 SelectedIndex 和启动预览（否则切回时列表仍是上一分类，选中无效）
             Dispatcher.BeginInvoke(new Action(ApplyCategoryChangeAndPreview), DispatcherPriority.ApplicationIdle);
         }
 
         private void ApplyCategoryChangeAndPreview()
         {
             if (SelectedCategory?.Games == null || GamesList == null) return;
+            _showPreviewTimer?.Stop();
+            if (_previewVlcPlayer != null) { try { _previewVlcPlayer.Stop(); } catch { } }
+            if (PreviewVideoView != null) PreviewVideoView.Opacity = 0;
             if (SelectedCategory.Games.Count > 0)
             {
                 GamesList.SelectedIndex = 0;
@@ -682,17 +797,10 @@ namespace TeknoParrotBigBox
                 return;
             }
 
-            // 启动游戏后，直接停止预览视频（不再在后台播放）
-            if (_previewMedia != null)
+            if (_previewVlcPlayer != null)
             {
-                try
-                {
-                    _previewMedia.Stop();
-                }
-                catch
-                {
-                    // 忽略 MediaElement 状态异常
-                }
+                try { _previewVlcPlayer.Stop(); }
+                catch { }
             }
         }
 
@@ -760,7 +868,8 @@ namespace TeknoParrotBigBox
         private void SettingsButton_Click(object sender, RoutedEventArgs e)
         {
             var win = new SettingsWindow { Owner = this };
-            win.ShowDialog();
+            if (win.ShowDialog() == true)
+                LoadGamesFromFolders();
         }
 
         private void BackToParrotButton_Click(object sender, RoutedEventArgs e)
@@ -848,37 +957,40 @@ namespace TeknoParrotBigBox
 
         private void GamesList_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
         {
-            if (_previewMedia == null)
-                return;
-            try
+            _previewDelayTimer.Stop();
+            if (_previewVlcPlayer == null) return;
+            Dispatcher.BeginInvoke(new Action(() =>
             {
-                _previewDelayTimer.Stop();
-                _previewMedia.Stop();
-                StartPreviewForCurrentGame();
-            }
-            catch
-            {
-                // 忽略 MediaElement 的状态异常
-            }
+                try
+                {
+                    _previewVlcPlayer.Stop();
+                    StartPreviewForCurrentGame();
+                }
+                catch { }
+            }), DispatcherPriority.Background);
         }
 
-        /// <summary>根据当前选中的游戏启动预览（有视频则启动延迟计时器，无则清空画面）。切换分类后若选中项引用未变，SelectionChanged 不会触发，需在分类切换回调里显式调用。</summary>
+        /// <summary>根据当前选中的游戏启动预览（有视频则启动延迟计时器，无则停止）。</summary>
         private void StartPreviewForCurrentGame()
         {
-            if (_previewMedia == null) return;
+            if (_previewVlcPlayer == null) return;
             try
             {
                 var selected = GamesList?.SelectedItem as GameEntry;
                 if (selected != null && !string.IsNullOrWhiteSpace(selected.VideoPath))
                 {
+                    VideoLog("StartPreviewForCurrentGame: 启动延迟计时器, ProfileId=" + (selected.ProfileId ?? ""));
                     _previewDelayTimer.Start();
                 }
                 else
                 {
-                    _previewMedia.Source = null;
+                    VideoLog("StartPreviewForCurrentGame: 无视频，清空");
+                    _showPreviewTimer?.Stop();
+                    _previewVlcPlayer.Stop();
+                    if (PreviewVideoView != null) PreviewVideoView.Opacity = 0;
                 }
             }
-            catch { }
+            catch (Exception ex) { VideoLog("StartPreviewForCurrentGame 异常: " + ex.Message); }
         }
 
         private void DescriptionScrollViewer_MouseEnter(object sender, System.Windows.Input.MouseEventArgs e)
@@ -1082,7 +1194,8 @@ namespace TeknoParrotBigBox
             }
 
             var baseDir = AppDomain.CurrentDomain.BaseDirectory;
-            var videosDir = Path.Combine(baseDir, "Media", "Videos");
+            string coversDir, videosDir;
+            ResolveMediaDirs(baseDir, out coversDir, out videosDir);
             try
             {
                 if (!Directory.Exists(videosDir))
@@ -1156,9 +1269,9 @@ namespace TeknoParrotBigBox
         private void ToggleMuteButton_Click(object sender, RoutedEventArgs e)
         {
             _isMuted = !_isMuted;
-            if (_previewMedia != null)
+            if (_previewVlcPlayer != null)
             {
-                _previewMedia.Volume = _isMuted ? 0.0 : 0.5;
+                _previewVlcPlayer.Volume = _isMuted ? 0 : 50;
             }
 
             if (MuteIcon != null)

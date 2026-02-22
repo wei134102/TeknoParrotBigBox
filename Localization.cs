@@ -1,7 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.IO;
-using Newtonsoft.Json;
 
 namespace TeknoParrotBigBox
 {
@@ -47,6 +45,8 @@ namespace TeknoParrotBigBox
             ["ButtonOk"] = "确定",
             ["ButtonCancel"] = "取消",
             ["VersionUnknown"] = "未知版本",
+            ["SettingsMediaPathLabel"] = "Media 路径（调试用，留空则使用程序目录）",
+            ["SettingsEnableDebugLogLabel"] = "写入调试日志到文件（BigBoxDebug.log）",
         };
 
         private static readonly Dictionary<string, string> En = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
@@ -83,10 +83,11 @@ namespace TeknoParrotBigBox
             ["ButtonOk"] = "OK",
             ["ButtonCancel"] = "Cancel",
             ["VersionUnknown"] = "Unknown",
+            ["SettingsMediaPathLabel"] = "Media path (for debugging; leave empty to use app directory)",
+            ["SettingsEnableDebugLogLabel"] = "Write debug log to file (BigBoxDebug.log)",
         };
 
         private static string _language = LangZh;
-        private static readonly string SettingsPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "BigBoxSettings.json");
 
         public static string Language
         {
@@ -121,9 +122,7 @@ namespace TeknoParrotBigBox
         {
             try
             {
-                if (!File.Exists(SettingsPath)) return;
-                var json = File.ReadAllText(SettingsPath);
-                var o = JsonConvert.DeserializeObject<Dictionary<string, string>>(json);
+                var o = BigBoxSettings.Load();
                 if (o != null && o.TryGetValue("Language", out var lang) && !string.IsNullOrWhiteSpace(lang))
                     _language = lang.Equals(LangEn, StringComparison.OrdinalIgnoreCase) ? LangEn : LangZh;
             }
@@ -135,16 +134,7 @@ namespace TeknoParrotBigBox
 
         public static void Save()
         {
-            try
-            {
-                var o = new Dictionary<string, string> { ["Language"] = _language };
-                var json = JsonConvert.SerializeObject(o, Formatting.Indented);
-                File.WriteAllText(SettingsPath, json);
-            }
-            catch
-            {
-                // 忽略
-            }
+            BigBoxSettings.Save(_language);
         }
     }
 }
