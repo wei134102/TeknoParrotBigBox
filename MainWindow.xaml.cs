@@ -115,12 +115,25 @@ namespace TeknoParrotBigBox
                 Interval = TimeSpan.FromMilliseconds(PreviewDelayMs)
             };
             _previewDelayTimer.Tick += PreviewDelayTimer_Tick;
+
+            // 订阅 VideoView Loaded 事件以初始化 LibVLC
+            // 注意：Loaded 可能在订阅前已触发，因此订阅后需手动检查
             if (PreviewVideoView != null)
+            {
                 PreviewVideoView.Loaded += PreviewVideoView_Loaded;
+                // 若 Loaded 已触发（IsLoaded=true），则手动初始化
+                if (PreviewVideoView.IsLoaded)
+                {
+                    PreviewVideoView_Loaded(PreviewVideoView, new RoutedEventArgs());
+                }
+            }
         }
 
         private void PreviewVideoView_Loaded(object sender, RoutedEventArgs e)
         {
+            // 防止重复初始化（手动调用 + 事件触发可能导致两次调用）
+            if (_previewVlcPlayer != null) return;
+
             try
             {
                 Core.Initialize();
@@ -146,6 +159,9 @@ namespace TeknoParrotBigBox
             VideoLog("VLC Playing: 媒体已开始播放 (记录上一支=" + _lastPlayedPreviewFileSizeMb.ToString("F1") + "MB)");
             Dispatcher.BeginInvoke(new Action(() =>
             {
+                // 视频开始播放，隐藏占位符
+                if (VideoPlaceholder != null) VideoPlaceholder.Visibility = Visibility.Collapsed;
+
                 _showPreviewTimer?.Stop();
                 _showPreviewTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(200) };
                 _showPreviewTimer.Tick += (s, ev) =>
@@ -160,6 +176,11 @@ namespace TeknoParrotBigBox
         private void PreviewVlc_EncounteredError(object sender, EventArgs e)
         {
             VideoLog("VLC EncounteredError: 播放失败");
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                // 播放失败时显示占位符
+                if (VideoPlaceholder != null) VideoPlaceholder.Visibility = Visibility.Visible;
+            }));
         }
 
         private void PreviewVlc_EndReached(object sender, EventArgs e)
@@ -253,6 +274,8 @@ namespace TeknoParrotBigBox
                         _showPreviewTimer?.Stop();
                         _previewVlcPlayer.Stop();
                         if (PreviewVideoView != null) PreviewVideoView.Opacity = 0;
+                        // 显示视频占位符
+                        if (VideoPlaceholder != null) VideoPlaceholder.Visibility = Visibility.Visible;
                     }
                 }
                 catch (Exception ex) { VideoLog("PreviewDelayTimer_Tick 异常: " + ex.Message); }
@@ -958,6 +981,29 @@ namespace TeknoParrotBigBox
         private void GamesList_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
         {
             _previewDelayTimer.Stop();
+
+            // 更新新 UI 元素：分类标签、收藏指示器、视频占位符
+            var selected = GamesList?.SelectedItem as GameEntry;
+            if (selected != null)
+            {
+                if (GameCategoryLabel != null)
+                    GameCategoryLabel.Text = SelectedCategory?.Name ?? "街机";
+
+                if (FavoriteIndicator != null)
+                    FavoriteIndicator.Visibility = selected.IsFavorite ? Visibility.Visible : Visibility.Collapsed;
+
+                if (VideoPlaceholder != null)
+                    VideoPlaceholder.Visibility = string.IsNullOrWhiteSpace(selected.VideoPath)
+                        ? Visibility.Visible
+                        : Visibility.Collapsed;
+            }
+            else
+            {
+                if (GameCategoryLabel != null) GameCategoryLabel.Text = "街机";
+                if (FavoriteIndicator != null) FavoriteIndicator.Visibility = Visibility.Collapsed;
+                if (VideoPlaceholder != null) VideoPlaceholder.Visibility = Visibility.Visible;
+            }
+
             if (_previewVlcPlayer == null) return;
             Dispatcher.BeginInvoke(new Action(() =>
             {
@@ -988,6 +1034,8 @@ namespace TeknoParrotBigBox
                     _showPreviewTimer?.Stop();
                     _previewVlcPlayer.Stop();
                     if (PreviewVideoView != null) PreviewVideoView.Opacity = 0;
+                    // 显示视频占位符
+                    if (VideoPlaceholder != null) VideoPlaceholder.Visibility = Visibility.Visible;
                 }
             }
             catch (Exception ex) { VideoLog("StartPreviewForCurrentGame 异常: " + ex.Message); }

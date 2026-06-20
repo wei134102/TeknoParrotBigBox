@@ -6,7 +6,9 @@
         Title="{Binding WindowTitle}"
         WindowStyle="None"
         WindowState="Maximized"
-        Background="#111111"
+        Background="#0A0A14"
+        SnapsToDevicePixels="True"
+        UseLayoutRounding="True"
         PreviewKeyDown="Window_PreviewKeyDown"
         KeyDown="Window_KeyDown"
         Closing="Window_Closing">
@@ -15,137 +17,220 @@
         <local:BooleanInverterConverter x:Key="BoolInvert" />
         <local:NullToImageSourceConverter x:Key="NullToImageSource" />
 
-        <!-- 绿色主操作按钮样式 -->
+        <!-- ============================================= -->
+        <!--  复古街机设计系统 — 4px 网格、霓虹色板          -->
+        <!--  主色: 青绿 #00FFB3  金: #FFD27F  蓝: #2196F3 -->
+        <!--  背景层: #0A0A14 → #14121E → #1C1A2E         -->
+        <!--  前景层: #CCCCDD → #EEEEFF                     -->
+        <!-- ============================================= -->
+
+        <!-- ====== 主操作按钮：街机绿 ====== -->
         <Style x:Key="GreenPrimaryButtonStyle" TargetType="Button">
-            <Setter Property="Background" Value="#3FAE4A" />
-            <Setter Property="Foreground" Value="White" />
-            <Setter Property="BorderBrush" Value="#2B7A34" />
-            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="FontFamily" Value="Segoe UI" />
+            <Setter Property="FontSize" Value="13" />
             <Setter Property="FontWeight" Value="Bold" />
-            <Style.Triggers>
-                <Trigger Property="IsEnabled" Value="False">
-                    <Setter Property="Background" Value="#225A29" />
-                    <Setter Property="BorderBrush" Value="#1A3F1E" />
-                    <Setter Property="Foreground" Value="#AAAAAA" />
-                </Trigger>
-            </Style.Triggers>
+            <Setter Property="Foreground" Value="#FFFFFF" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="bd"
+                                Background="#00B848"
+                                BorderBrush="#00E676"
+                                BorderThickness="1"
+                                CornerRadius="8"
+                                Padding="18,7"
+                                SnapsToDevicePixels="True"
+                                RenderOptions.EdgeMode="Aliased">
+                            <Border.Effect>
+                                <DropShadowEffect Color="#00FFB3" BlurRadius="12" ShadowDepth="0" Opacity="0.25" />
+                            </Border.Effect>
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="bd" Property="Background" Value="#00D84E" />
+                                <Setter TargetName="bd" Property="Effect">
+                                    <Setter.Value>
+                                        <DropShadowEffect Color="#00FFB3" BlurRadius="20" ShadowDepth="0" Opacity="0.45" />
+                                    </Setter.Value>
+                                </Setter>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="bd" Property="Background" Value="#009E3A" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="bd" Property="Background" Value="#152E1A" />
+                                <Setter TargetName="bd" Property="BorderBrush" Value="#1A3820" />
+                                <Setter TargetName="bd" Property="Effect" Value="{x:Null}" />
+                                <Setter Property="Foreground" Value="#556655" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
         </Style>
 
-        <!-- 深色次级按钮样式（收藏 / 取消收藏 / 设置 / 关于） -->
+        <!-- ====== 次级按钮：暗紫 ====== -->
         <Style x:Key="DarkActionButtonStyle" TargetType="Button">
-            <Setter Property="Background" Value="#303030" />
-            <Setter Property="Foreground" Value="White" />
-            <Setter Property="BorderBrush" Value="#555555" />
-            <Setter Property="BorderThickness" Value="1" />
-            <Style.Triggers>
-                <Trigger Property="IsEnabled" Value="False">
-                    <Setter Property="Background" Value="#202020" />
-                    <Setter Property="BorderBrush" Value="#404040" />
-                    <Setter Property="Foreground" Value="#777777" />
-                </Trigger>
-            </Style.Triggers>
+            <Setter Property="FontFamily" Value="Segoe UI" />
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="Foreground" Value="#BBBBCC" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="bd"
+                                Background="#1A1830"
+                                BorderBrush="#302E48"
+                                BorderThickness="1"
+                                CornerRadius="8"
+                                Padding="16,7"
+                                SnapsToDevicePixels="True">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="bd" Property="Background" Value="#262440" />
+                                <Setter TargetName="bd" Property="BorderBrush" Value="#4A4868" />
+                                <Setter Property="Foreground" Value="#DDDDFF" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="bd" Property="Background" Value="#12102A" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="bd" Property="Background" Value="#0E0C1C" />
+                                <Setter TargetName="bd" Property="BorderBrush" Value="#1C1A30" />
+                                <Setter Property="Foreground" Value="#444455" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
         </Style>
     </Window.Resources>
+
     <Grid>
         <Grid.RowDefinitions>
-            <!-- 顶部：分类栏（Pegasus 风格） -->
             <RowDefinition Height="Auto" />
-            <!-- 中间：游戏封面 + 详情 -->
             <RowDefinition Height="*" />
-            <!-- 底部：提示栏 -->
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
         <Grid.ColumnDefinitions>
-            <!-- 游戏封面墙 -->
-            <ColumnDefinition Width="2*" />
-            <!-- 详情 + 预览 -->
-            <ColumnDefinition Width="3*" />
+            <ColumnDefinition Width="2.4*" MinWidth="400" />
+            <ColumnDefinition Width="3.6*" MinWidth="500" />
         </Grid.ColumnDefinitions>
 
-        <!-- 背景：当前选中游戏的封面做毛玻璃背景，模仿 Pegasus 风格 -->
-        <Image Grid.RowSpan="3" Grid.ColumnSpan="2"
-               Source="{Binding ElementName=GamesList, Path=SelectedItem.CoverImagePath, Converter={StaticResource NullToImageSource}}"
-               Stretch="UniformToFill"
-               Opacity="0.20"
-               RenderOptions.BitmapScalingMode="HighQuality"
-               IsHitTestVisible="False"
-               Panel.ZIndex="-1">
-            <Image.Effect>
-                <BlurEffect Radius="20" />
-            </Image.Effect>
-        </Image>
+        <!-- ====== 全局背景：模糊封面 + 暗紫渐变 ====== -->
+        <Grid Grid.RowSpan="3" Grid.ColumnSpan="2" IsHitTestVisible="False" Panel.ZIndex="-1">
+            <Image Source="{Binding ElementName=GamesList, Path=SelectedItem.CoverImagePath, Converter={StaticResource NullToImageSource}}"
+                   Stretch="UniformToFill"
+                   Opacity="0.12"
+                   RenderOptions.BitmapScalingMode="HighQuality">
+                <Image.Effect>
+                    <BlurEffect Radius="40" />
+                </Image.Effect>
+            </Image>
+            <Rectangle>
+                <Rectangle.Fill>
+                    <RadialGradientBrush GradientOrigin="0.4,0.3" RadiusX="0.9" RadiusY="0.9">
+                        <GradientStop Color="#DD0A0A14" Offset="0" />
+                        <GradientStop Color="#EE12101E" Offset="0.7" />
+                        <GradientStop Color="#FF0A0A14" Offset="1" />
+                    </RadialGradientBrush>
+                </Rectangle.Fill>
+            </Rectangle>
+        </Grid>
 
-        <!-- 顶部：横向分类栏，固定只显示约 7 个分类宽度，选中项居中、左右切换时轮动 -->
-        <Border Grid.Row="0" Grid.ColumnSpan="2" Margin="10,10,10,6" Background="#181818" CornerRadius="8" Padding="8,6">
+        <!-- ====== 顶部分类栏 ====== -->
+        <Border Grid.Row="0" Grid.ColumnSpan="2"
+                Margin="16,12,16,4"
+                Background="#131120"
+                CornerRadius="12"
+                Padding="4,4"
+                BorderBrush="#22203A"
+                BorderThickness="1">
+            <Border.Effect>
+                <DropShadowEffect Color="#000000" BlurRadius="8" ShadowDepth="2" Opacity="0.3" />
+            </Border.Effect>
             <ScrollViewer x:Name="CategoriesScrollViewer"
                           HorizontalScrollBarVisibility="Hidden"
                           VerticalScrollBarVisibility="Disabled"
-                          MaxHeight="56"
-                          Width="920">
+                          MaxHeight="52">
                 <ListBox x:Name="CategoriesList"
                          ItemsSource="{Binding Categories}"
                          SelectedItem="{Binding SelectedCategory, Mode=TwoWay}"
                          SelectionChanged="CategoriesList_SelectionChanged"
                          Background="Transparent"
                          BorderThickness="0"
-                         Foreground="White"
+                         Foreground="#AAAABB"
                          ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                          ScrollViewer.VerticalScrollBarVisibility="Disabled">
-                <!-- 选中项始终蓝色，不随焦点丢失变黑 -->
-                <ListBox.ItemContainerStyle>
-                    <Style TargetType="ListBoxItem">
-                        <Setter Property="Background" Value="Transparent" />
-                        <Setter Property="Template">
-                            <Setter.Value>
-                                <ControlTemplate TargetType="ListBoxItem">
-                                    <Border x:Name="Bd" Background="{TemplateBinding Background}" Padding="0">
-                                        <ContentPresenter />
-                                    </Border>
-                                    <ControlTemplate.Triggers>
-                                        <Trigger Property="IsSelected" Value="True">
-                                            <Setter TargetName="Bd" Property="Background" Value="#2196F3" />
-                                        </Trigger>
-                                    </ControlTemplate.Triggers>
-                                </ControlTemplate>
-                            </Setter.Value>
-                        </Setter>
-                    </Style>
-                </ListBox.ItemContainerStyle>
-                <ListBox.ItemsPanel>
-                    <ItemsPanelTemplate>
-                        <StackPanel Orientation="Horizontal" />
-                    </ItemsPanelTemplate>
-                </ListBox.ItemsPanel>
-                <ListBox.ItemTemplate>
-                    <DataTemplate>
-                        <Border Margin="4,0"
-                                Padding="14,8"
-                                CornerRadius="6"
-                                Background="#252525"
-                                Cursor="Hand">
-                            <Border.Style>
-                                <Style TargetType="Border">
-                                    <Style.Triggers>
-                                        <DataTrigger Binding="{Binding IsSelected, RelativeSource={RelativeSource AncestorType=ListBoxItem}}" Value="True">
-                                            <Setter Property="Background" Value="#2196F3" />
-                                        </DataTrigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </Border.Style>
-                            <TextBlock Text="{Binding Name}"
-                                           FontSize="15"
+                    <ListBox.ItemContainerStyle>
+                        <Style TargetType="ListBoxItem">
+                            <Setter Property="Background" Value="Transparent" />
+                            <Setter Property="Template">
+                                <Setter.Value>
+                                    <ControlTemplate TargetType="ListBoxItem">
+                                        <Border x:Name="Bd" Background="{TemplateBinding Background}" Padding="0">
+                                            <ContentPresenter />
+                                        </Border>
+                                        <ControlTemplate.Triggers>
+                                            <Trigger Property="IsSelected" Value="True">
+                                                <Setter TargetName="Bd" Property="Background" Value="#2196F3" />
+                                            </Trigger>
+                                        </ControlTemplate.Triggers>
+                                    </ControlTemplate>
+                                </Setter.Value>
+                            </Setter>
+                        </Style>
+                    </ListBox.ItemContainerStyle>
+                    <ListBox.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <StackPanel Orientation="Horizontal" />
+                        </ItemsPanelTemplate>
+                    </ListBox.ItemsPanel>
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <Border x:Name="CatBorder"
+                                    Margin="3,2"
+                                    Padding="16,8"
+                                    CornerRadius="8"
+                                    Background="#1A1830"
+                                    Cursor="Hand"
+                                    RenderOptions.BitmapScalingMode="NearestNeighbor">
+                                <Border.Style>
+                                    <Style TargetType="Border">
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding IsSelected, RelativeSource={RelativeSource AncestorType=ListBoxItem}}" Value="True">
+                                                <Setter Property="Background" Value="#2196F3" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Border.Style>
+                                <TextBlock Text="{Binding Name}"
+                                           FontSize="14"
                                            FontWeight="SemiBold"
-                                           Foreground="White"
-                                           VerticalAlignment="Center" />
+                                           Foreground="#DDDDEE"
+                                           VerticalAlignment="Center"
+                                           Padding="2,0" />
                             </Border>
                         </DataTemplate>
-                </ListBox.ItemTemplate>
+                    </ListBox.ItemTemplate>
                 </ListBox>
             </ScrollViewer>
         </Border>
 
-        <!-- 左侧：当前分类下的游戏封面列表 -->
-        <Border Grid.Row="1" Grid.Column="0" Margin="10,0,6,10" Background="#202020" CornerRadius="8">
+        <!-- ====== 左侧：游戏封面网格 ====== -->
+        <Border Grid.Row="1" Grid.Column="0"
+                Margin="16,4,4,10"
+                Background="#131120"
+                CornerRadius="12"
+                BorderBrush="#22203A"
+                BorderThickness="1">
+            <Border.Effect>
+                <DropShadowEffect Color="#000000" BlurRadius="8" ShadowDepth="2" Opacity="0.25" />
+            </Border.Effect>
             <ScrollViewer HorizontalScrollBarVisibility="Disabled"
                           VerticalScrollBarVisibility="Hidden">
                 <ListBox x:Name="GamesList"
@@ -159,17 +244,18 @@
                     <ListBox.ItemsPanel>
                         <ItemsPanelTemplate>
                             <WrapPanel Orientation="Horizontal"
-                                       Margin="10"
-                                       ItemWidth="180"
-                                       ItemHeight="260" />
+                                       Margin="12"
+                                       ItemWidth="200"
+                                       ItemHeight="296" />
                         </ItemsPanelTemplate>
                     </ListBox.ItemsPanel>
                     <ListBox.ItemTemplate>
                         <DataTemplate>
-                            <Border Margin="5"
-                                    CornerRadius="6"
-                                    Background="#303030"
-                                    BorderBrush="#505050"
+                            <Border x:Name="CardBorder"
+                                    Margin="4"
+                                    CornerRadius="10"
+                                    Background="#1A1830"
+                                    BorderBrush="#28263E"
                                     BorderThickness="1">
                                 <Border.Style>
                                     <Style TargetType="Border">
@@ -179,14 +265,19 @@
                                                 <ScaleTransform ScaleX="1.0" ScaleY="1.0" />
                                             </Setter.Value>
                                         </Setter>
+                                        <Setter Property="Effect" Value="{x:Null}" />
                                         <Style.Triggers>
-                                            <!-- 选中游戏时轻微放大并高亮边框，模仿 Pegasus 的选中效果 -->
                                             <DataTrigger Binding="{Binding IsSelected, RelativeSource={RelativeSource AncestorType=ListBoxItem}}" Value="True">
-                                                <Setter Property="Background" Value="#404040" />
                                                 <Setter Property="BorderBrush" Value="#FFD27F" />
+                                                <Setter Property="Background" Value="#222040" />
                                                 <Setter Property="RenderTransform">
                                                     <Setter.Value>
                                                         <ScaleTransform ScaleX="1.05" ScaleY="1.05" />
+                                                    </Setter.Value>
+                                                </Setter>
+                                                <Setter Property="Effect">
+                                                    <Setter.Value>
+                                                        <DropShadowEffect Color="#FFD27F" BlurRadius="16" ShadowDepth="0" Opacity="0.3" Direction="0" />
                                                     </Setter.Value>
                                                 </Setter>
                                             </DataTrigger>
@@ -198,28 +289,37 @@
                                         <RowDefinition Height="*" />
                                         <RowDefinition Height="Auto" />
                                     </Grid.RowDefinitions>
-                                    <Image Grid.Row="0"
-                                           Margin="6"
-                                           Stretch="UniformToFill"
-                                           Source="{Binding CoverImagePath, Converter={StaticResource NullToImageSource}}"
-                                           SnapsToDevicePixels="True" />
-                                    <!-- 收藏星标（叠加在图片之上） -->
+                                    <!-- 封面图片：带圆角裁切 -->
+                                    <Border Grid.Row="0" Margin="6,6,6,2" CornerRadius="6" ClipToBounds="True"
+                                            Background="#0E0C1C">
+                                        <Image Stretch="UniformToFill"
+                                               Source="{Binding CoverImagePath, Converter={StaticResource NullToImageSource}}"
+                                               SnapsToDevicePixels="True"
+                                               RenderOptions.BitmapScalingMode="HighQuality" />
+                                    </Border>
+                                    <!-- 收藏星标 -->
                                     <TextBlock Text="★"
-                                               FontSize="16"
+                                               FontSize="15"
                                                FontWeight="Bold"
                                                Foreground="#FFD700"
                                                HorizontalAlignment="Right"
                                                VerticalAlignment="Top"
-                                               Margin="0,2,4,0"
+                                               Margin="0,10,10,0"
                                                IsHitTestVisible="False"
-                                               Visibility="{Binding IsFavorite, Converter={StaticResource BoolToVis}}" />
+                                               Visibility="{Binding IsFavorite, Converter={StaticResource BoolToVis}}">
+                                        <TextBlock.Effect>
+                                            <DropShadowEffect Color="#FFD700" BlurRadius="8" ShadowDepth="0" Opacity="0.5" />
+                                        </TextBlock.Effect>
+                                    </TextBlock>
+                                    <!-- 标题 -->
                                     <TextBlock Grid.Row="1"
-                                               Margin="6"
+                                               Margin="8,2,8,8"
                                                Text="{Binding Title}"
-                                               TextWrapping="Wrap"
-                                               FontSize="14"
-                                               FontWeight="Bold"
-                                               Foreground="White"
+                                               TextWrapping="NoWrap"
+                                               TextTrimming="CharacterEllipsis"
+                                               FontSize="12"
+                                               FontWeight="SemiBold"
+                                               Foreground="#BBBBCC"
                                                HorizontalAlignment="Center"
                                                TextAlignment="Center" />
                                 </Grid>
@@ -230,70 +330,196 @@
             </ScrollViewer>
         </Border>
 
-        <!-- 右侧：详情 + 预览区域 -->
-        <Border Grid.Row="1" Grid.Column="1" Margin="6,0,10,10" Background="#181818" CornerRadius="8">
-            <Grid Margin="16">
+        <!-- ====== 右侧：详情 + 预览 ====== -->
+        <Border Grid.Row="1" Grid.Column="1"
+                Margin="4,4,16,10"
+                Background="#131120"
+                CornerRadius="12"
+                BorderBrush="#22203A"
+                BorderThickness="1">
+            <Border.Effect>
+                <DropShadowEffect Color="#000000" BlurRadius="8" ShadowDepth="2" Opacity="0.25" />
+            </Border.Effect>
+            <Grid Margin="20,16,20,18">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="400" />
                     <RowDefinition Height="*" />
-                    <!-- 固定区域用于游戏介绍，可滚动 -->
-                    <RowDefinition Height="2*" />
                     <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
 
-                <!-- 标题 -->
+                <!-- ====== Row 0: 游戏标题 ====== -->
                 <TextBlock Grid.Row="0"
                            Text="{Binding ElementName=GamesList, Path=SelectedItem.Title}"
-                           FontSize="32"
+                           FontSize="28"
                            FontWeight="Bold"
-                           Foreground="White" />
+                           Foreground="#00FFB3"
+                           TextTrimming="CharacterEllipsis"
+                           Margin="0,0,0,2">
+                    <TextBlock.Effect>
+                        <DropShadowEffect Color="#00FFB3" BlurRadius="10" ShadowDepth="0" Opacity="0.2" />
+                    </TextBlock.Effect>
+                </TextBlock>
 
-                <!-- 封面大图 + 视频预览 -->
-                <Grid Grid.Row="1" Margin="0,16,0,8" Height="260">
+                <!-- ====== Row 1: 副标题/分类标签 + 霓虹分隔线 ====== -->
+                <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,12">
+                    <Border Background="#1A1830"
+                            CornerRadius="4"
+                            Padding="8,3"
+                            BorderBrush="#302E48"
+                            BorderThickness="1"
+                            VerticalAlignment="Center">
+                        <TextBlock x:Name="GameCategoryLabel"
+                                   Text="街机"
+                                   FontSize="11"
+                                   FontWeight="SemiBold"
+                                   Foreground="#8888AA" />
+                    </Border>
+                    <Border Background="#1A1830"
+                            CornerRadius="4"
+                            Padding="8,3"
+                            BorderBrush="#302E48"
+                            BorderThickness="1"
+                            Margin="6,0,0,0"
+                            VerticalAlignment="Center"
+                            Visibility="Collapsed">
+                        <TextBlock x:Name="GameEmulatorLabel"
+                                   Text=""
+                                   FontSize="11"
+                                   FontWeight="SemiBold"
+                                   Foreground="#8888AA" />
+                    </Border>
+                    <!-- 收藏标记 -->
+                    <TextBlock x:Name="FavoriteIndicator"
+                               Text="★ 已收藏"
+                               FontSize="11"
+                               FontWeight="SemiBold"
+                               Foreground="#FFD700"
+                               Margin="8,0,0,0"
+                               VerticalAlignment="Center"
+                               Visibility="Collapsed">
+                        <TextBlock.Effect>
+                            <DropShadowEffect Color="#FFD700" BlurRadius="4" ShadowDepth="0" Opacity="0.3" />
+                        </TextBlock.Effect>
+                    </TextBlock>
+                </StackPanel>
+
+                <!-- ====== Row 2: 封面大图 + 视频预览（核心区域，固定高度优先显示） ====== -->
+                <Grid Grid.Row="2" Margin="0,0,0,12" MinHeight="280">
                     <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="2*" />
-                        <ColumnDefinition Width="3*" />
+                        <ColumnDefinition Width="2*" MinWidth="180" />
+                        <ColumnDefinition Width="3.2*" MinWidth="280" />
                     </Grid.ColumnDefinitions>
 
                     <!-- 大封面 -->
                     <Border Grid.Column="0"
                             Margin="0,0,8,0"
-                            Background="#202020"
-                            CornerRadius="6">
-                        <Image Margin="8"
-                               Stretch="Uniform"
-                               Source="{Binding ElementName=GamesList, Path=SelectedItem.CoverImagePath, Converter={StaticResource NullToImageSource}}"
-                               SnapsToDevicePixels="True" />
+                            Background="#0E0C1C"
+                            CornerRadius="10"
+                            BorderBrush="#28263E"
+                            BorderThickness="1"
+                            ClipToBounds="True">
+                        <Grid>
+                            <Image Margin="8"
+                                   Stretch="Uniform"
+                                   Source="{Binding ElementName=GamesList, Path=SelectedItem.CoverImagePath, Converter={StaticResource NullToImageSource}}"
+                                   SnapsToDevicePixels="True"
+                                   RenderOptions.BitmapScalingMode="HighQuality" />
+                            <!-- 底部暗角遮罩 -->
+                            <Rectangle VerticalAlignment="Bottom" Height="50" IsHitTestVisible="False">
+                                <Rectangle.Fill>
+                                    <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                                        <GradientStop Color="Transparent" Offset="0" />
+                                        <GradientStop Color="#990E0C1C" Offset="1" />
+                                    </LinearGradientBrush>
+                                </Rectangle.Fill>
+                            </Rectangle>
+                        </Grid>
                     </Border>
 
-                    <!-- 视频预览区域：无视频时右键可添加视频 -->
+                    <!-- 视频预览区域 -->
                     <Border x:Name="PreviewVideoBorder"
                             Grid.Column="1"
-                            Margin="8,0,0,0"
-                            Background="#202020"
-                            CornerRadius="6"
-                            BorderBrush="#404040"
-                            BorderThickness="1">
+                            Background="#060410"
+                            CornerRadius="10"
+                            BorderBrush="#302E48"
+                            BorderThickness="1"
+                            ClipToBounds="True">
                         <Border.ContextMenu>
                             <ContextMenu x:Name="PreviewVideoContextMenu" Opened="PreviewVideoContextMenu_Opened">
                                 <MenuItem x:Name="AddVideoMenuItem" Header="添加视频" Click="AddVideoMenuItem_Click" />
                             </ContextMenu>
                         </Border.ContextMenu>
-                        <Grid x:Name="PreviewMediaHostGrid" Background="Black">
-                            <!-- 底层纯黑，无视频或加载前始终可见，避免白底/白闪 -->
+                        <Grid x:Name="PreviewMediaHostGrid" Background="#040208">
+                            <!-- 底层纯黑 -->
                             <Rectangle Fill="Black" />
                             <vlc:VideoView x:Name="PreviewVideoView" Background="Black" Opacity="0" />
-                            <!-- 静音切换小喇叭 -->
-                            <Button Width="28"
-                                    Height="28"
-                                    Margin="6"
+
+                            <!-- 视频未加载时的占位符 -->
+                            <Grid x:Name="VideoPlaceholder" IsHitTestVisible="False">
+                                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                                    <TextBlock Text="▶"
+                                               FontSize="48"
+                                               Foreground="#333350"
+                                               HorizontalAlignment="Center" />
+                                    <TextBlock Text="无预览视频"
+                                               FontSize="12"
+                                               Foreground="#444460"
+                                               HorizontalAlignment="Center"
+                                               Margin="0,6,0,0" />
+                                </StackPanel>
+                            </Grid>
+
+                            <!-- CRT 扫描线 -->
+                            <Rectangle IsHitTestVisible="False" Opacity="0.05">
+                                <Rectangle.Fill>
+                                    <LinearGradientBrush StartPoint="0,0" EndPoint="0,1" SpreadMethod="Repeat">
+                                        <GradientStop Color="Transparent" Offset="0" />
+                                        <GradientStop Color="Black" Offset="0.5" />
+                                        <GradientStop Color="Transparent" Offset="0.505" />
+                                        <GradientStop Color="Black" Offset="1" />
+                                    </LinearGradientBrush>
+                                </Rectangle.Fill>
+                            </Rectangle>
+                            <!-- CRT 暗角 -->
+                            <Border IsHitTestVisible="False" CornerRadius="10">
+                                <Border.Background>
+                                    <RadialGradientBrush GradientOrigin="0.5,0.5" RadiusX="0.72" RadiusY="0.72">
+                                        <GradientStop Color="Transparent" Offset="0.55" />
+                                        <GradientStop Color="#55000000" Offset="1" />
+                                    </RadialGradientBrush>
+                                </Border.Background>
+                            </Border>
+                            <!-- 静音按钮 -->
+                            <Button Width="32" Height="32"
+                                    Margin="10"
                                     HorizontalAlignment="Right"
                                     VerticalAlignment="Bottom"
-                                    Background="#66000000"
-                                    BorderBrush="Transparent"
-                                    Click="ToggleMuteButton_Click">
+                                    Background="#44000000"
+                                    BorderBrush="#33FFFFFF"
+                                    BorderThickness="1"
+                                    Click="ToggleMuteButton_Click"
+                                    Cursor="Hand"
+                                    ToolTip="切换静音">
+                                <Button.Template>
+                                    <ControlTemplate TargetType="Button">
+                                        <Border x:Name="bg"
+                                                Background="{TemplateBinding Background}"
+                                                BorderBrush="{TemplateBinding BorderBrush}"
+                                                BorderThickness="1"
+                                                CornerRadius="16">
+                                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                        </Border>
+                                        <ControlTemplate.Triggers>
+                                            <Trigger Property="IsMouseOver" Value="True">
+                                                <Setter TargetName="bg" Property="Background" Value="#66000000" />
+                                            </Trigger>
+                                        </ControlTemplate.Triggers>
+                                    </ControlTemplate>
+                                </Button.Template>
                                 <TextBlock x:Name="MuteIcon"
-                                           Text="🔈"
+                                           Text="&#x1F50A;"
                                            FontSize="14"
                                            Foreground="White"
                                            HorizontalAlignment="Center"
@@ -303,86 +529,100 @@
                     </Border>
                 </Grid>
 
-                <!-- 描述（固定区域 + 可滚动） -->
-                <Border Grid.Row="2"
-                        Margin="0,8,0,0"
-                        Background="Transparent">
-                    <!-- 隐藏滚动条，可鼠标滚轮/自动滚动 -->
+                <!-- ====== Row 3: 游戏描述（填充视频和按钮之间的全部空间，可滚动） ====== -->
+                <Border Grid.Row="3"
+                        Background="#0E0C1C"
+                        CornerRadius="8"
+                        BorderBrush="#22203A"
+                        BorderThickness="1">
                     <ScrollViewer x:Name="DescriptionScrollViewer"
-                                  VerticalScrollBarVisibility="Hidden"
+                                  Margin="14,10"
+                                  VerticalScrollBarVisibility="Auto"
                                   HorizontalScrollBarVisibility="Disabled"
                                   PanningMode="VerticalOnly"
                                   MouseEnter="DescriptionScrollViewer_MouseEnter"
                                   MouseLeave="DescriptionScrollViewer_MouseLeave">
-                        <TextBlock Text="{Binding ElementName=GamesList, Path=SelectedItem.Description}"
-                                   Foreground="#DDDDDD"
+                        <TextBlock x:Name="DescriptionText"
+                                   Text="{Binding ElementName=GamesList, Path=SelectedItem.Description}"
+                                   Foreground="#9999AA"
                                    TextWrapping="Wrap"
-                                   FontSize="14" />
+                                   FontSize="12.5"
+                                   LineHeight="20" />
                     </ScrollViewer>
                 </Border>
 
-                <!-- 底部操作按钮 -->
-                <StackPanel Grid.Row="3"
-                            Margin="0,12,0,0"
+                <!-- ====== Row 4: 操作按钮栏 ====== -->
+                <StackPanel Grid.Row="4"
+                            Margin="0,14,0,0"
                             Orientation="Horizontal"
                             HorizontalAlignment="Left">
-                    <Button x:Name="StartGameButton" Content="开始游戏"
-                            Width="100"
+                    <Button x:Name="StartGameButton"
+                            Content="▶  开始游戏"
+                            Height="36"
                             Margin="0,0,8,0"
-                            Height="32"
                             Click="StartGameButton_Click"
                             Style="{StaticResource GreenPrimaryButtonStyle}" />
-                    <Button x:Name="FavoriteGameButton" Content="收藏游戏"
-                            Width="100"
-                            Margin="0,0,8,0"
-                            Height="32"
+                    <Button x:Name="FavoriteGameButton"
+                            Content="★  收藏"
+                            Height="36"
+                            Margin="0,0,6,0"
                             Click="FavoriteGameButton_Click"
                             IsEnabled="{Binding ElementName=GamesList, Path=SelectedItem.IsFavorite, Converter={StaticResource BoolInvert}}"
                             Style="{StaticResource DarkActionButtonStyle}" />
-                    <Button x:Name="UnfavoriteGameButton" Content="取消收藏"
-                            Width="100"
-                            Margin="0,0,8,0"
-                            Height="32"
+                    <Button x:Name="UnfavoriteGameButton"
+                            Content="☆  取消收藏"
+                            Height="36"
+                            Margin="0,0,6,0"
                             Click="UnfavoriteGameButton_Click"
                             IsEnabled="{Binding ElementName=GamesList, Path=SelectedItem.IsFavorite}"
                             Style="{StaticResource DarkActionButtonStyle}" />
-                    <Button x:Name="BackToParrotButton" Content="返回鹦鹉"
-                            Width="100"
-                            Margin="0,0,8,0"
-                            Height="32"
+                    <Button x:Name="BackToParrotButton"
+                            Content="↩  返回鹦鹉"
+                            Height="36"
+                            Margin="0,0,6,0"
                             Click="BackToParrotButton_Click"
                             Style="{StaticResource DarkActionButtonStyle}" />
-                    <Button x:Name="SettingsButton" Content="设置"
-                            Width="80"
-                            Margin="0,0,8,0"
-                            Height="32"
+                    <Button x:Name="SettingsButton"
+                            Content="⚙  设置"
+                            Height="36"
+                            Margin="0,0,6,0"
                             Click="SettingsButton_Click"
                             Style="{StaticResource DarkActionButtonStyle}" />
-                    <Button x:Name="AboutButton" Content="关于本程序"
-                            Width="110"
-                            Margin="0,0,8,0"
-                            Height="32"
+                    <Button x:Name="AboutButton"
+                            Content="?  关于"
+                            Height="36"
                             Click="AboutButton_Click"
                             Style="{StaticResource DarkActionButtonStyle}" />
                 </StackPanel>
             </Grid>
         </Border>
 
-        <!-- 底部提示 + 总游戏数 -->
-        <DockPanel Grid.Row="2" Grid.ColumnSpan="2"
-                   VerticalAlignment="Center"
-                   HorizontalAlignment="Stretch"
-                   Margin="16,8">
-            <TextBlock x:Name="HintText" Text="←→ 切换游戏   ↑↓ 切换分类    Enter/A 启动    Esc/B 退出"
-                       Foreground="#BBBBBB"
-                       FontSize="14"
-                       VerticalAlignment="Center" />
-            <TextBlock x:Name="GamesCountText" DockPanel.Dock="Right"
-                       Foreground="#BBBBBB"
-                       FontSize="14"
-                       VerticalAlignment="Center"
-                       Text="{Binding GamesCountFormatted, Mode=OneWay}" />
-        </DockPanel>
+        <!-- ====== 底部状态栏 ====== -->
+        <Border Grid.Row="2" Grid.ColumnSpan="2"
+                Margin="16,0,16,12"
+                Background="#131120"
+                CornerRadius="10"
+                BorderBrush="#22203A"
+                BorderThickness="1"
+                Padding="18,7">
+            <DockPanel VerticalAlignment="Center">
+                <TextBlock x:Name="HintText"
+                           Text="← → 切换游戏     ↑ ↓ 切换分类     Enter / A 启动     Esc / B 退出"
+                           Foreground="#555570"
+                           FontSize="12"
+                           VerticalAlignment="Center" />
+                <TextBlock x:Name="GamesCountText"
+                           DockPanel.Dock="Right"
+                           Foreground="#00FFB3"
+                           FontSize="12"
+                           FontWeight="SemiBold"
+                           VerticalAlignment="Center"
+                           Text="{Binding GamesCountFormatted, Mode=OneWay}">
+                    <TextBlock.Effect>
+                        <DropShadowEffect Color="#00FFB3" BlurRadius="4" ShadowDepth="0" Opacity="0.2" />
+                    </TextBlock.Effect>
+                </TextBlock>
+            </DockPanel>
+        </Border>
     </Grid>
 </Window>
-
