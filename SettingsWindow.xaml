@@ -34,6 +34,12 @@
                       Foreground="#EEE"
                       FontSize="13"
                       Margin="0,12,0,0" />
+            <CheckBox x:Name="CheckBoxSkipVersionCheck"
+                      Content="{Binding SkipVersionCheckLabel}"
+                      IsChecked="{Binding SkipVersionCheck, Mode=TwoWay}"
+                      Foreground="#EEE"
+                      FontSize="13"
+                      Margin="0,12,0,0" />
         </StackPanel>
         <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right">
             <Button x:Name="ButtonOk" Content="{Binding ButtonOkText}" Width="80" Height="28" Margin="0,0,8,0" Click="ButtonOk_Click" IsDefault="True" />

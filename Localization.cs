@@ -47,6 +47,7 @@ namespace TeknoParrotBigBox
             ["VersionUnknown"] = "未知版本",
             ["SettingsMediaPathLabel"] = "Media 路径（调试用，留空则使用程序目录）",
             ["SettingsEnableDebugLogLabel"] = "写入调试日志到文件（BigBoxDebug.log）",
+            ["SettingsSkipVersionCheckLabel"] = "跳过 TeknoParrotUi 版本检查",
         };
 
         private static readonly Dictionary<string, string> En = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
@@ -85,6 +86,7 @@ namespace TeknoParrotBigBox
             ["VersionUnknown"] = "Unknown",
             ["SettingsMediaPathLabel"] = "Media path (for debugging; leave empty to use app directory)",
             ["SettingsEnableDebugLogLabel"] = "Write debug log to file (BigBoxDebug.log)",
+            ["SettingsSkipVersionCheckLabel"] = "Skip TeknoParrotUi version check",
         };
 
         private static string _language = LangZh;

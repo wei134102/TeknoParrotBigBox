@@ -9,11 +9,13 @@ namespace TeknoParrotBigBox
         private string _languageLabel;
         private string _mediaPathLabel;
         private string _enableDebugLogLabel;
+        private string _skipVersionCheckLabel;
         private string _buttonOkText;
         private string _buttonCancelText;
         private int _languageIndex;
         private string _mediaPath;
         private bool _enableDebugLog;
+        private bool _skipVersionCheck;
 
         public string ButtonOkText { get => _buttonOkText; set { _buttonOkText = value; OnPropertyChanged(nameof(ButtonOkText)); } }
         public string ButtonCancelText { get => _buttonCancelText; set { _buttonCancelText = value; OnPropertyChanged(nameof(ButtonCancelText)); } }
@@ -60,6 +62,18 @@ namespace TeknoParrotBigBox
             set { _enableDebugLog = value; OnPropertyChanged(nameof(EnableDebugLog)); }
         }
 
+        public string SkipVersionCheckLabel
+        {
+            get => _skipVersionCheckLabel ?? "";
+            set { _skipVersionCheckLabel = value; OnPropertyChanged(nameof(SkipVersionCheckLabel)); }
+        }
+
+        public bool SkipVersionCheck
+        {
+            get => _skipVersionCheck;
+            set { _skipVersionCheck = value; OnPropertyChanged(nameof(SkipVersionCheck)); }
+        }
+
         public SettingsWindow()
         {
             InitializeComponent();
@@ -68,8 +82,10 @@ namespace TeknoParrotBigBox
             LanguageLabel = Localization.Get("SettingsLanguageLabel");
             MediaPathLabel = Localization.Get("SettingsMediaPathLabel");
             EnableDebugLogLabel = Localization.Get("SettingsEnableDebugLogLabel");
+            SkipVersionCheckLabel = Localization.Get("SettingsSkipVersionCheckLabel");
             MediaPath = BigBoxSettings.MediaPath;
             EnableDebugLog = BigBoxSettings.EnableDebugLog;
+            SkipVersionCheck = BigBoxSettings.SkipVersionCheck;
             ComboLanguage.Items.Clear();
             ComboLanguage.Items.Add(Localization.Get("SettingsLangZh"));
             ComboLanguage.Items.Add(Localization.Get("SettingsLangEn"));
@@ -83,6 +99,7 @@ namespace TeknoParrotBigBox
             Localization.Language = LanguageIndex == 1 ? Localization.LangEn : Localization.LangZh;
             BigBoxSettings.MediaPath = (TextBoxMediaPath?.Text ?? "").Trim();
             BigBoxSettings.EnableDebugLog = CheckBoxEnableDebugLog?.IsChecked == true;
+            BigBoxSettings.SkipVersionCheck = CheckBoxSkipVersionCheck?.IsChecked == true;
             BigBoxSettings.Save(Localization.Language);
             DialogResult = true;
             Close();

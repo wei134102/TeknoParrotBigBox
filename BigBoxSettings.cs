@@ -14,6 +14,7 @@ namespace TeknoParrotBigBox
 
         private static string _mediaPath = "";
         private static bool _enableDebugLog;
+        private static bool _skipVersionCheck;
 
         /// <summary>自定义 Media 根路径（封面、视频等）。留空或目录不存在时使用程序目录。</summary>
         public static string MediaPath
@@ -27,6 +28,13 @@ namespace TeknoParrotBigBox
         {
             get => _enableDebugLog;
             set => _enableDebugLog = value;
+        }
+
+        /// <summary>是否跳过与 TeknoParrotUi.exe 的版本号比对检查。</summary>
+        public static bool SkipVersionCheck
+        {
+            get => _skipVersionCheck;
+            set => _skipVersionCheck = value;
         }
 
         /// <summary>加载设置，返回完整键值对供 Localization 使用。</summary>
@@ -43,6 +51,8 @@ namespace TeknoParrotBigBox
                         _mediaPath = mp.Trim();
                     if (o.TryGetValue("EnableDebugLog", out var log) && log != null)
                         _enableDebugLog = log.Trim() == "1" || string.Equals(log.Trim(), "true", StringComparison.OrdinalIgnoreCase);
+                    if (o.TryGetValue("SkipVersionCheck", out var svc) && svc != null)
+                        _skipVersionCheck = svc.Trim() == "1" || string.Equals(svc.Trim(), "true", StringComparison.OrdinalIgnoreCase);
                     return o;
                 }
             }
@@ -62,7 +72,8 @@ namespace TeknoParrotBigBox
                 {
                     ["Language"] = language ?? Localization.LangZh,
                     ["MediaPath"] = _mediaPath ?? "",
-                    ["EnableDebugLog"] = _enableDebugLog ? "1" : "0"
+                    ["EnableDebugLog"] = _enableDebugLog ? "1" : "0",
+                    ["SkipVersionCheck"] = _skipVersionCheck ? "1" : "0"
                 };
                 var json = JsonConvert.SerializeObject(o, Formatting.Indented);
                 File.WriteAllText(SettingsPath, json);

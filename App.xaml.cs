@@ -36,7 +36,7 @@ namespace TeknoParrotBigBox
                 parrotVersion = null;
             }
 
-            if (parrotVersion == null || parrotVersion != selfVersion)
+            if (parrotVersion == null || (!BigBoxSettings.SkipVersionCheck && parrotVersion != selfVersion))
             {
                 var parrotStr = parrotVersion != null ? parrotVersion.ToString() : "未知";
                 var selfStr = selfVersion != null ? selfVersion.ToString() : "未知";
