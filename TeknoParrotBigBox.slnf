@@ -1,0 +1,8 @@
+{
+  "solution": {
+    "path": "TeknoParrotBigBox.sln",
+    "projects": [
+      "TeknoParrotBigBox.csproj"
+    ]
+  }
+}

@@ -10,6 +10,9 @@ namespace TeknoParrotBigBox
     {
         private void Application_Startup(object sender, StartupEventArgs e)
         {
+            // 先加载设置（BigBoxSettings.json），确保 SkipVersionCheck 等配置在版本比对前已生效
+            BigBoxSettings.Load();
+
             var baseDir = AppDomain.CurrentDomain.BaseDirectory;
             var parrotPath = Path.Combine(baseDir, "TeknoParrotUi.exe");
 
@@ -36,6 +39,7 @@ namespace TeknoParrotBigBox
                 parrotVersion = null;
             }
 
+            // parrotVersion 读取失败仍视为不一致；SkipVersionCheck 开启时允许版本不同继续启动
             if (parrotVersion == null || (!BigBoxSettings.SkipVersionCheck && parrotVersion != selfVersion))
             {
                 var parrotStr = parrotVersion != null ? parrotVersion.ToString() : "未知";

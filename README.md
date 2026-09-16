@@ -14,7 +14,7 @@
 - 右侧：
   - 当前选中游戏的标题
   - 大封面图
-  - 游戏预览视频（基于 LibVLCSharp，兼容多种格式；可静音/开声）
+  - 游戏预览视频（基于 WPF 内置 MediaElement；可静音/开声）
   - 可滚动的游戏介绍（来自 LaunchBox `Teknoparrot.xml`）
   - 操作按钮：
     - **开始游戏**：启动当前游戏（调用同目录 `TeknoParrotUi.exe --profile=ID.xml`；无 UserProfiles 时回退为执行 bat）
@@ -68,7 +68,7 @@
    ```bash
    msbuild TeknoParrotBigBox.csproj /p:Configuration=Release
    ```
-4. 输出在 `bin\Release\` 或 `bin\Debug\`，需将 **VideoLAN.LibVLC.Windows** 随程序一起发布（NuGet 会复制原生库到输出目录）。
+4. 输出在 `bin\Release\` 或 `bin\Debug\`，预览视频播放使用 WPF 内置 MediaElement，无需额外发布播放器原生库。
 
 ### 运行
 
@@ -97,7 +97,7 @@
 ## 注意事项
 
 - 本仓库通过 `.gitignore` 忽略了 `bin/`、`obj/`、`Media/` 等，建议只将源码和脚本纳入版本控制。
-- 预览视频使用 **LibVLCSharp**，需保证运行目录或 NuGet 输出中包含 VLC 原生库（VideoLAN.LibVLC.Windows 会复制到输出目录）。
+- 预览视频使用 WPF 内置 **MediaElement**；如需支持特定视频编码，请使用 Windows 已安装编码组件支持的格式（如 MP4/H.264）。
 
 ---
 
@@ -117,9 +117,6 @@
 
 | 项目 | 版本 | 用途 | 许可证 | 链接 |
 |------|------|------|--------|------|
-| **LibVLCSharp** | 3.8.5 | 预览视频播放（.NET 绑定） | LGPL-2.1-or-later | https://github.com/videolan/libvlcsharp |
-| **LibVLCSharp.WPF** | 3.8.5 | WPF 视频视图控件 | LGPL-2.1-or-later | https://github.com/videolan/libvlcsharp |
-| **VideoLAN.LibVLC.Windows** | 3.0.20 | VLC 原生库（Windows） | GPL-2.0-or-later | https://github.com/videolan/vlc |
 | **Newtonsoft.Json** | 13.0.3 | JSON 解析与配置 | MIT | https://www.newtonsoft.com/json |
 
 ### 设计/思路参考（无直接代码引用）

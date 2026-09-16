@@ -9,11 +9,11 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Media.Animation;
 using Microsoft.Win32;
 using Newtonsoft.Json;
 using System.Windows.Threading;
 using TeknoParrotBigBox.Models;
-using LibVLCSharp.Shared;
 
 namespace TeknoParrotBigBox
 {
@@ -26,23 +26,20 @@ namespace TeknoParrotBigBox
 
         private readonly DispatcherTimer _descriptionScrollTimer;
         private readonly DispatcherTimer _gamepadTimer;
-        private readonly DispatcherTimer _previewDelayTimer;
-        private DispatcherTimer _showPreviewTimer;
+
+        // ====== 视频预览状态机 ======
+        private enum VideoPreviewState { Idle, WaitingSelected, WaitingBigFile, LoadingMedia, TransitioningIn }
+        private VideoPreviewState _videoState;
+        private readonly DispatcherTimer _videoStateTimer;
         private GamepadInput.GamepadState _lastGamepadState;
         private double _descriptionScrollOffset;
         private bool _isDescriptionHovered;
         private bool _isMuted = false;
-        private bool _autoMutedForGame;
+        private bool _isExitingConfirmed;
+        private bool _isCurrentMediaPlaying;
         private Process _currentGameProcess;
         private bool _categoryPreviewRetryScheduled;
-        /// <summary>LibVLC 与预览播放器（兼容更多视频格式）。</summary>
-        private LibVLC _libVLC;
-        private LibVLCSharp.Shared.MediaPlayer _previewVlcPlayer;
-        private Media _currentPreviewMedia;
-        /// <summary>上一支已成功开始播放的预览视频文件大小(MB)，用于大文件后延迟加载下一支。</summary>
-        private double _lastPlayedPreviewFileSizeMb;
-        /// <summary>当前一次 Play() 对应的文件大小(MB)，在 Playing 时写回 _lastPlayedPreviewFileSizeMb。</summary>
-        private double _currentPreviewFileSizeMb;
+        
 
         private string _windowTitle = "TeknoParrot BigBox";
         public string WindowTitle
@@ -108,86 +105,63 @@ namespace TeknoParrotBigBox
             _gamepadTimer.Tick += GamepadTimer_Tick;
             _gamepadTimer.Start();
 
-            // 预览视频延迟播放：只有选中项停留超过此时间才加载视频，快速滚轮切换时不会逐个起播
-            const int PreviewDelayMs = 500;
-            _previewDelayTimer = new DispatcherTimer
-            {
-                Interval = TimeSpan.FromMilliseconds(PreviewDelayMs)
-            };
-            _previewDelayTimer.Tick += PreviewDelayTimer_Tick;
+            // 统一视频状态机计时器：根据 _videoState 处理不同阶段的时序
+            _videoStateTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(1) };
+            _videoStateTimer.Tick += VideoStateTimer_Tick;
 
-            // 订阅 VideoView Loaded 事件以初始化 LibVLC
-            // 注意：Loaded 可能在订阅前已触发，因此订阅后需手动检查
-            if (PreviewVideoView != null)
-            {
-                PreviewVideoView.Loaded += PreviewVideoView_Loaded;
-                // 若 Loaded 已触发（IsLoaded=true），则手动初始化
-                if (PreviewVideoView.IsLoaded)
-                {
-                    PreviewVideoView_Loaded(PreviewVideoView, new RoutedEventArgs());
-                }
-            }
+            StartPreviewForCurrentGame();
         }
 
-        private void PreviewVideoView_Loaded(object sender, RoutedEventArgs e)
+        private void PreviewVideoView_MediaOpened(object sender, RoutedEventArgs e)
         {
-            // 防止重复初始化（手动调用 + 事件触发可能导致两次调用）
-            if (_previewVlcPlayer != null) return;
+            _isCurrentMediaPlaying = true;
+            VideoLog("MediaElement 媒体已打开");
+            if (VideoPlaceholder != null) VideoPlaceholder.Visibility = Visibility.Collapsed;
+            StartVideoFadeIn();
+            _videoState = VideoPreviewState.Idle;
+        }
 
+        private void PreviewVideoView_MediaEnded(object sender, RoutedEventArgs e)
+        {
+            // MediaElement 结束：停止而不是重播，避免长时间占用 CPU/内存。
+            StopVideoPreviewInternal();
+        }
+
+        private void PreviewVideoView_MediaFailed(object sender, ExceptionRoutedEventArgs e)
+        {
+            VideoLog("MediaElement 播放失败: " + (e.ErrorException?.Message ?? ""));
+            _isCurrentMediaPlaying = false;
+            _videoStateTimer.Stop();
+            TransitionVideoState(VideoPreviewState.Idle);
+            if (VideoPlaceholder != null) VideoPlaceholder.Visibility = Visibility.Visible;
+        }
+
+        private void StartVideoFadeIn()
+        {
+            if (PreviewVideoView == null) return;
             try
             {
-                Core.Initialize();
-                _libVLC = new LibVLC();
-                _previewVlcPlayer = new LibVLCSharp.Shared.MediaPlayer(_libVLC);
-                PreviewVideoView.MediaPlayer = _previewVlcPlayer;
-                _previewVlcPlayer.Volume = _isMuted ? 0 : 50;
-                _previewVlcPlayer.Playing += PreviewVlc_Playing;
-                _previewVlcPlayer.EncounteredError += PreviewVlc_EncounteredError;
-                _previewVlcPlayer.EndReached += PreviewVlc_EndReached;
-                VideoLog("LibVLC 预览播放器已初始化");
-                StartPreviewForCurrentGame();
-            }
-            catch (Exception ex)
-            {
-                VideoLog("LibVLC 初始化异常: " + ex.Message);
-            }
-        }
-
-        private void PreviewVlc_Playing(object sender, EventArgs e)
-        {
-            _lastPlayedPreviewFileSizeMb = _currentPreviewFileSizeMb;
-            VideoLog("VLC Playing: 媒体已开始播放 (记录上一支=" + _lastPlayedPreviewFileSizeMb.ToString("F1") + "MB)");
-            Dispatcher.BeginInvoke(new Action(() =>
-            {
-                // 视频开始播放，隐藏占位符
-                if (VideoPlaceholder != null) VideoPlaceholder.Visibility = Visibility.Collapsed;
-
-                _showPreviewTimer?.Stop();
-                _showPreviewTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(200) };
-                _showPreviewTimer.Tick += (s, ev) =>
+                var anim = new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(400))
                 {
-                    _showPreviewTimer.Stop();
-                    if (PreviewVideoView != null) PreviewVideoView.Opacity = 1;
+                    EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseOut }
                 };
-                _showPreviewTimer.Start();
-            }));
+                PreviewVideoView.BeginAnimation(UIElement.OpacityProperty, anim);
+            }
+            catch { PreviewVideoView.Opacity = 1; }
         }
 
-        private void PreviewVlc_EncounteredError(object sender, EventArgs e)
+        private void StartVideoFadeOut()
         {
-            VideoLog("VLC EncounteredError: 播放失败");
-            Dispatcher.BeginInvoke(new Action(() =>
+            if (PreviewVideoView == null || PreviewVideoView.Opacity <= 0.05) return;
+            try
             {
-                // 播放失败时显示占位符
-                if (VideoPlaceholder != null) VideoPlaceholder.Visibility = Visibility.Visible;
-            }));
-        }
-
-        private void PreviewVlc_EndReached(object sender, EventArgs e)
-        {
-            if (_previewVlcPlayer == null || _currentPreviewMedia == null) return;
-            if (_previewVlcPlayer.Media == _currentPreviewMedia)
-                _previewVlcPlayer.Play(_currentPreviewMedia);
+                var anim = new DoubleAnimation(PreviewVideoView.Opacity, 0, TimeSpan.FromMilliseconds(250))
+                {
+                    EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseIn }
+                };
+                PreviewVideoView.BeginAnimation(UIElement.OpacityProperty, anim);
+            }
+            catch { PreviewVideoView.Opacity = 0; }
         }
 
         private static void VideoLog(string message)
@@ -197,89 +171,116 @@ namespace TeknoParrotBigBox
             AppLog.WriteLine(line);
         }
 
-        private void DoPreviewLoad(Uri uri, GameEntry selected, double currentFileSizeMb)
+        // ====== 视频状态机 ======
+        //   Idle               → 空闲，可随时启动新预览
+        //   WaitingSelected    → 等待选中项稳定（500ms），避免快速切换时逐个起播
+        //   WaitingBigFile     → 大文件(>50MB)额外延迟 600ms 缓冲
+        //   LoadingMedia       → 正在加载媒体
+        //   TransitioningIn    → 等待播放开始后淡入
+        
+        private DateTime _videoStateEnterTime;
+
+        private void TransitionVideoState(VideoPreviewState newState)
         {
-            Dispatcher.BeginInvoke(new Action(() =>
-            {
-                if (_previewVlcPlayer == null)
-                {
-                    VideoLog("DoPreviewLoad: _previewVlcPlayer 未初始化");
-                    return;
-                }
-                var cur = GamesList?.SelectedItem as GameEntry;
-                if (cur != selected || string.IsNullOrWhiteSpace(cur?.VideoPath))
-                {
-                    VideoLog("选择已变更或无视频，跳过本次加载");
-                    return;
-                }
-                try
-                {
-                    _showPreviewTimer?.Stop();
-                    if (PreviewVideoView != null) PreviewVideoView.Opacity = 0;
-                    var path = uri.IsFile ? uri.LocalPath : uri.ToString();
-                    _previewVlcPlayer.Stop();
-                    _currentPreviewMedia?.Dispose();
-                    _currentPreviewMedia = new Media(_libVLC, path, FromType.FromPath);
-                    _currentPreviewFileSizeMb = currentFileSizeMb;
-                    _previewVlcPlayer.Volume = _isMuted ? 0 : 50;
-                    _previewVlcPlayer.Play(_currentPreviewMedia);
-                    VideoLog("VLC Play: " + path + " (约" + currentFileSizeMb.ToString("F1") + "MB)");
-                }
-                catch (Exception ex)
-                {
-                    VideoLog("DoPreviewLoad 异常: " + ex.Message);
-                }
-            }), DispatcherPriority.Background);
+            _videoState = newState;
+            _videoStateEnterTime = DateTime.Now;
+            VideoLog("状态机 → " + newState);
         }
 
-        private void PreviewDelayTimer_Tick(object sender, EventArgs e)
+        private void VideoStateTimer_Tick(object sender, EventArgs e)
         {
-            _previewDelayTimer.Stop();
-            VideoLog("Tick 触发");
-            if (_previewVlcPlayer == null) return;
-            var selected = GamesList.SelectedItem as GameEntry;
-            Dispatcher.BeginInvoke(new Action(() =>
+            if (_videoState == VideoPreviewState.Idle || _videoState == VideoPreviewState.LoadingMedia || _videoState == VideoPreviewState.TransitioningIn)
             {
-                try
+                _videoStateTimer.Stop();
+                return;
+            }
+
+            var selected = GamesList?.SelectedItem as GameEntry;
+            if (selected == null || string.IsNullOrWhiteSpace(selected.VideoPath))
+            {
+                StopVideoPreviewInternal();
+                TransitionVideoState(VideoPreviewState.Idle);
+                _videoStateTimer.Stop();
+                return;
+            }
+
+            var elapsed = (DateTime.Now - _videoStateEnterTime).TotalMilliseconds;
+            if (elapsed >= 30000)
+            {
+                VideoLog("状态机超时，强制回到 Idle");
+                StopVideoPreviewInternal();
+                TransitionVideoState(VideoPreviewState.Idle);
+                _videoStateTimer.Stop();
+                return;
+            }
+
+            if (_videoState == VideoPreviewState.WaitingSelected && elapsed >= 500)
+            {
+                var path = selected.VideoPath.Trim();
+                var fileSizeMb = 0.0;
+                try { if (File.Exists(path)) fileSizeMb = new FileInfo(path).Length / (1024.0 * 1024.0); }
+                catch { }
+
+                if (fileSizeMb > 50)
                 {
-                    if (selected != null && !string.IsNullOrWhiteSpace(selected.VideoPath))
-                    {
-                        var path = selected.VideoPath.Trim();
-                        var fileSizeMb = 0.0;
-                        try { if (File.Exists(path)) fileSizeMb = new FileInfo(path).Length / (1024.0 * 1024.0); }
-                        catch { }
-                        Uri uri = Path.IsPathRooted(path)
-                            ? new Uri(path, UriKind.Absolute)
-                            : new Uri(Path.GetFullPath(path), UriKind.Absolute);
-                        VideoLog("准备加载: " + path + " (ProfileId=" + (selected.ProfileId ?? "") + ", 约" + fileSizeMb.ToString("F1") + "MB)");
-                        _previewVlcPlayer.Stop();
-                        if (fileSizeMb > 50)
-                        {
-                            VideoLog("大文件(" + fileSizeMb.ToString("F0") + "MB)，延迟 600ms 后加载");
-                            var delayTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(600) };
-                            delayTimer.Tick += (s, ev) =>
-                            {
-                                delayTimer.Stop();
-                                VideoLog("延迟结束，开始加载");
-                                DoPreviewLoad(uri, selected, fileSizeMb);
-                            };
-                            delayTimer.Start();
-                        }
-                        else
-                            DoPreviewLoad(uri, selected, fileSizeMb);
-                    }
-                    else
-                    {
-                        VideoLog("无视频路径，Stop");
-                        _showPreviewTimer?.Stop();
-                        _previewVlcPlayer.Stop();
-                        if (PreviewVideoView != null) PreviewVideoView.Opacity = 0;
-                        // 显示视频占位符
-                        if (VideoPlaceholder != null) VideoPlaceholder.Visibility = Visibility.Visible;
-                    }
+                    VideoLog("大文件(" + fileSizeMb.ToString("F0") + "MB)，缓冲 600ms 再加载");
+                    TransitionVideoState(VideoPreviewState.WaitingBigFile);
                 }
-                catch (Exception ex) { VideoLog("PreviewDelayTimer_Tick 异常: " + ex.Message); }
-            }), DispatcherPriority.Background);
+                else
+                {
+                    LoadVideoMedia(selected, path, fileSizeMb);
+                    TransitionVideoState(VideoPreviewState.LoadingMedia);
+                    _videoStateTimer.Stop();
+                }
+            }
+            else if (_videoState == VideoPreviewState.WaitingBigFile && elapsed >= 600)
+            {
+                var path = selected.VideoPath.Trim();
+                var fileSizeMb = 0.0;
+                try { if (File.Exists(path)) fileSizeMb = new FileInfo(path).Length / (1024.0 * 1024.0); }
+                catch { }
+                LoadVideoMedia(selected, path, fileSizeMb);
+                TransitionVideoState(VideoPreviewState.LoadingMedia);
+                _videoStateTimer.Stop();
+            }
+        }
+
+        private void LoadVideoMedia(GameEntry selected, string path, double fileSizeMb)
+        {
+            if (PreviewVideoView == null) return;
+            try
+            {
+                if (_isCurrentMediaPlaying)
+                    StartVideoFadeOut();
+
+                _isCurrentMediaPlaying = false;
+                StopVideoPreviewInternal();
+
+                Uri uri = Path.IsPathRooted(path)
+                    ? new Uri(path, UriKind.Absolute)
+                    : new Uri(Path.GetFullPath(path), UriKind.Absolute);
+
+                PreviewVideoView.Source = uri;
+                PreviewVideoView.IsMuted = _isMuted;
+                PreviewVideoView.Play();
+                VideoLog("MediaElement Play: " + path + " (约" + fileSizeMb.ToString("F1") + "MB)");
+            }
+            catch (Exception ex)
+            {
+                VideoLog("LoadVideoMedia 异常: " + ex.Message);
+                TransitionVideoState(VideoPreviewState.Idle);
+            }
+        }
+
+        private void StopVideoPreviewInternal()
+        {
+            _isCurrentMediaPlaying = false;
+            if (PreviewVideoView != null)
+            {
+                PreviewVideoView.Stop();
+                PreviewVideoView.Source = null;
+                PreviewVideoView.Opacity = 0;
+            }
         }
 
         private void GamepadTimer_Tick(object sender, EventArgs e)
@@ -729,6 +730,11 @@ namespace TeknoParrotBigBox
             if (SettingsButton != null) SettingsButton.Content = Localization.Get("ButtonSettings");
             if (AboutButton != null) AboutButton.Content = Localization.Get("ButtonAbout");
             if (HintText != null) HintText.Text = Localization.Get("HintBottom");
+            if (FavoriteIndicator != null) FavoriteIndicator.Text = Localization.Get("LabelFavoriteIndicator");
+            if (NoPreviewVideoText != null) NoPreviewVideoText.Text = Localization.Get("LabelNoPreviewVideo");
+            if (AddVideoMenuItem != null) AddVideoMenuItem.Header = Localization.Get("MenuAddVideo");
+            if (GameCategoryLabel != null && (SelectedCategory == null || SelectedCategory.Key == "__favorites"))
+                GameCategoryLabel.Text = Localization.Get("LabelArcade");
             OnPropertyChanged(nameof(GamesCountFormatted));
             if (_favoritesCategory != null)
                 _favoritesCategory.Name = Localization.Get("CategoryFavorites") + " (" + (_favoritesCategory.Games?.Count ?? 0) + ")";
@@ -740,7 +746,8 @@ namespace TeknoParrotBigBox
             if (SelectedCategory?.Games == null || GamesList == null)
                 return;
             ScrollCategoryIntoView();
-            _previewDelayTimer.Stop();
+            _videoStateTimer.Stop();
+            TransitionVideoState(VideoPreviewState.Idle);
             _categoryPreviewRetryScheduled = false;
             Dispatcher.BeginInvoke(new Action(ApplyCategoryChangeAndPreview), DispatcherPriority.ApplicationIdle);
         }
@@ -748,9 +755,8 @@ namespace TeknoParrotBigBox
         private void ApplyCategoryChangeAndPreview()
         {
             if (SelectedCategory?.Games == null || GamesList == null) return;
-            _showPreviewTimer?.Stop();
-            if (_previewVlcPlayer != null) { try { _previewVlcPlayer.Stop(); } catch { } }
-            if (PreviewVideoView != null) PreviewVideoView.Opacity = 0;
+            StopVideoPreviewInternal();
+            TransitionVideoState(VideoPreviewState.Idle);
             if (SelectedCategory.Games.Count > 0)
             {
                 GamesList.SelectedIndex = 0;
@@ -812,7 +818,13 @@ namespace TeknoParrotBigBox
 
                 // 启动游戏进程
                 _currentGameProcess?.Dispose();
-                _currentGameProcess = Process.Start(startInfo);
+                _currentGameProcess = new Process { EnableRaisingEvents = true, StartInfo = startInfo };
+                _currentGameProcess.Exited += CurrentGameProcess_Exited;
+                _currentGameProcess.Start();
+
+                // 游戏运行时将主窗口最小化，减少干扰
+                WindowState = WindowState.Minimized;
+                ShowInTaskbar = true;
             }
             catch (Exception ex)
             {
@@ -820,16 +832,16 @@ namespace TeknoParrotBigBox
                 return;
             }
 
-            if (_previewVlcPlayer != null)
+            try
             {
-                try { _previewVlcPlayer.Stop(); }
-                catch { }
+                StopVideoPreviewInternal();
             }
+            catch { }
         }
 
         private void CurrentGameProcess_Exited(object sender, EventArgs e)
         {
-            // 回到 UI 线程，仅清理进程句柄（静音恢复交给用户手动控制）
+            // 回到 UI 线程，清理进程句柄并恢复主窗口
             Dispatcher.BeginInvoke(new Action(() =>
             {
                 if (_currentGameProcess != null)
@@ -838,6 +850,9 @@ namespace TeknoParrotBigBox
                     _currentGameProcess.Dispose();
                     _currentGameProcess = null;
                 }
+                // 游戏结束后恢复窗口
+                if (WindowState == WindowState.Minimized)
+                    WindowState = WindowState.Normal;
             }));
         }
 
@@ -892,10 +907,152 @@ namespace TeknoParrotBigBox
         {
             var win = new SettingsWindow { Owner = this };
             if (win.ShowDialog() == true)
+            {
+                NullToImageSourceConverter.ClearCache();
                 LoadGamesFromFolders();
+            }
         }
 
         private void BackToParrotButton_Click(object sender, RoutedEventArgs e)
+        {
+            // 先弹三按钮确认框：返回鹦鹉 / 推出程序 / 取消。仅当用户明确选择才执行动作，避免误点。
+            switch (ShowBackToParrotConfirm())
+            {
+                case BackToParrotChoice.BackToParrot:
+                    LaunchTeknoParrotUi();
+                    break;
+                case BackToParrotChoice.ExitProgram:
+                    _isExitingConfirmed = true;
+                    Application.Current.Shutdown();
+                    break;
+                case BackToParrotChoice.Cancel:
+                    break;
+            }
+        }
+
+        /// <summary>三按钮确认对话框的用户选择。</summary>
+        private enum BackToParrotChoice
+        {
+            BackToParrot,
+            ExitProgram,
+            Cancel
+        }
+
+        /// <summary>
+        /// 弹出三按钮确认框：「返回鹦鹉 / 推出程序 / 取消」。
+        /// 使用自定义 Window 承载，因为系统 MessageBox 无法自定义第三个按钮的文本。
+        /// 按钮风格与主界面保持一致：返回=街机绿，推出=暗紫警示，取消=暗紫中性。
+        /// </summary>
+        private BackToParrotChoice ShowBackToParrotConfirm()
+        {
+            BackToParrotChoice choice = BackToParrotChoice.Cancel;
+
+            var dlg = new Window
+            {
+                Owner = this,
+                Title = Localization.Get("TitleBackToParrotConfirm"),
+                WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                ResizeMode = ResizeMode.NoResize,
+                SizeToContent = SizeToContent.WidthAndHeight,
+                ShowInTaskbar = false,
+                MinWidth = 420,
+                MaxWidth = 600,
+                WindowStyle = WindowStyle.SingleBorderWindow
+            };
+            dlg.Background = (SolidColorBrush)TryFindResource("ThemeBgWindowBrush")
+                             ?? new SolidColorBrush(Color.FromRgb(10, 10, 20));
+            dlg.Foreground = (SolidColorBrush)TryFindResource("ThemeTextPrimaryBrush")
+                             ?? new SolidColorBrush(Color.FromRgb(221, 221, 238));
+            dlg.FontFamily = new FontFamily("Segoe UI");
+            dlg.FontSize = 13;
+
+            var root = new Grid { Margin = new System.Windows.Thickness(28, 24, 28, 20) };
+
+            // 标题栏：与卡片一致的暗紫底 + 街机绿左侧装饰条
+            var header = new Border
+            {
+                Background = (Brush)TryFindResource("ThemeBgPanelBrush") ?? Brushes.Transparent,
+                CornerRadius = new CornerRadius(6),
+                Padding = new System.Windows.Thickness(14, 12, 14, 12),
+                Margin = new System.Windows.Thickness(0, 0, 0, 18)
+            };
+            var headerPanel = new Grid();
+            var headerText = new TextBlock
+            {
+                Text = Localization.Get("TitleBackToParrotConfirm"),
+                FontSize = 16,
+                FontWeight = FontWeights.Bold,
+                Foreground = (Brush)TryFindResource("ThemeAccentCyanBrush") ?? Brushes.White
+            };
+            headerPanel.Children.Add(headerText);
+            header.Child = headerPanel;
+            root.Children.Add(header);
+
+            var message = new TextBlock
+            {
+                Text = Localization.Get("MsgBackToParrotConfirm"),
+                TextWrapping = TextWrapping.Wrap,
+                Foreground = (Brush)TryFindResource("ThemeTextPrimaryBrush") ?? Brushes.White,
+                Margin = new System.Windows.Thickness(0, 0, 0, 22)
+            };
+            root.Children.Add(message);
+
+            var panel = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
+            root.Children.Add(panel);
+
+            void SetChoice(BackToParrotChoice value)
+            {
+                choice = value;
+                dlg.Close();
+            }
+
+            // 把主界面的「街机绿」主按钮样式注入到对话框，保持视觉一致
+            var greenStyle = TryFindResource("GreenPrimaryButtonStyle") as Style;
+            var darkStyle = TryFindResource("DarkActionButtonStyle") as Style;
+
+            var backBtn = new Button
+            {
+                Content = Localization.Get("ButtonBackToParrotConfirm"),
+                MinWidth = 120,
+                Height = 36,
+                Margin = new System.Windows.Thickness(8, 0, 0, 0),
+                Style = greenStyle
+            };
+            backBtn.Click += (s, e) => SetChoice(BackToParrotChoice.BackToParrot);
+            panel.Children.Add(backBtn);
+
+            // 推出程序：与「取消」按钮一致使用暗紫中性风格，靠图标 ⏻ 区分含义
+            var exitBtn = new Button
+            {
+                Content = Localization.Get("ButtonExitProgram"),
+                MinWidth = 120,
+                Height = 36,
+                Margin = new System.Windows.Thickness(8, 0, 0, 0),
+                Style = darkStyle
+            };
+            exitBtn.Click += (s, e) => SetChoice(BackToParrotChoice.ExitProgram);
+            panel.Children.Add(exitBtn);
+
+            var cancelBtn = new Button
+            {
+                // 取消按钮：与其它两个按钮保持一致，加图标前缀
+                Content = "✕  " + Localization.Get("ButtonCancel"),
+                MinWidth = 120,
+                Height = 36,
+                Margin = new System.Windows.Thickness(8, 0, 0, 0),
+                Style = darkStyle,
+                IsCancel = true
+            };
+            cancelBtn.Click += (s, e) => SetChoice(BackToParrotChoice.Cancel);
+            panel.Children.Add(cancelBtn);
+
+            dlg.Content = root;
+            dlg.ShowDialog();
+            return choice;
+        }
+
+        /// <summary>启动同目录下的 TeknoParrotUi.exe，成功后退出 BigBox。</summary>
+        private void LaunchTeknoParrotUi()
         {
             try
             {
@@ -915,7 +1072,6 @@ namespace TeknoParrotBigBox
                     WorkingDirectory = baseDir,
                     UseShellExecute = false
                 };
-
                 Process.Start(startInfo);
             }
             catch (Exception ex)
@@ -925,7 +1081,8 @@ namespace TeknoParrotBigBox
                 return;
             }
 
-            // 成功启动鹦鹉 UI 后退出 BigBox
+            // 成功启动鹦鹉 UI 后退出 BigBox；标记已确认退出，避免 Window_Closing 再次弹确认框
+            _isExitingConfirmed = true;
             Application.Current.Shutdown();
         }
 
@@ -980,7 +1137,8 @@ namespace TeknoParrotBigBox
 
         private void GamesList_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
         {
-            _previewDelayTimer.Stop();
+            _videoStateTimer.Stop();
+            TransitionVideoState(VideoPreviewState.Idle);
 
             // 更新新 UI 元素：分类标签、收藏指示器、视频占位符
             var selected = GamesList?.SelectedItem as GameEntry;
@@ -1004,12 +1162,10 @@ namespace TeknoParrotBigBox
                 if (VideoPlaceholder != null) VideoPlaceholder.Visibility = Visibility.Visible;
             }
 
-            if (_previewVlcPlayer == null) return;
             Dispatcher.BeginInvoke(new Action(() =>
             {
                 try
                 {
-                    _previewVlcPlayer.Stop();
                     StartPreviewForCurrentGame();
                 }
                 catch { }
@@ -1019,23 +1175,23 @@ namespace TeknoParrotBigBox
         /// <summary>根据当前选中的游戏启动预览（有视频则启动延迟计时器，无则停止）。</summary>
         private void StartPreviewForCurrentGame()
         {
-            if (_previewVlcPlayer == null) return;
+            if (PreviewVideoView == null) return;
             try
             {
                 var selected = GamesList?.SelectedItem as GameEntry;
                 if (selected != null && !string.IsNullOrWhiteSpace(selected.VideoPath))
                 {
-                    VideoLog("StartPreviewForCurrentGame: 启动延迟计时器, ProfileId=" + (selected.ProfileId ?? ""));
-                    _previewDelayTimer.Start();
+                    VideoLog("StartPreviewForCurrentGame: 进入 WaitingSelected, ProfileId=" + (selected.ProfileId ?? ""));
+                    TransitionVideoState(VideoPreviewState.WaitingSelected);
+                    _videoStateTimer.Start();
                 }
                 else
                 {
                     VideoLog("StartPreviewForCurrentGame: 无视频，清空");
-                    _showPreviewTimer?.Stop();
-                    _previewVlcPlayer.Stop();
-                    if (PreviewVideoView != null) PreviewVideoView.Opacity = 0;
-                    // 显示视频占位符
+                    _videoStateTimer.Stop();
+                    StopVideoPreviewInternal();
                     if (VideoPlaceholder != null) VideoPlaceholder.Visibility = Visibility.Visible;
+                    TransitionVideoState(VideoPreviewState.Idle);
                 }
             }
             catch (Exception ex) { VideoLog("StartPreviewForCurrentGame 异常: " + ex.Message); }
@@ -1054,6 +1210,7 @@ namespace TeknoParrotBigBox
         /// <summary>弹出确认框，仅在用户确认后关闭主界面，防止误退出。</summary>
         private void TryCloseWithConfirm()
         {
+            if (_isExitingConfirmed) return;
             var result = MessageBox.Show(
                 Localization.Get("ExitConfirmMessage"),
                 Localization.Get("ExitConfirmTitle"),
@@ -1061,11 +1218,15 @@ namespace TeknoParrotBigBox
                 MessageBoxImage.Question,
                 MessageBoxResult.Cancel);
             if (result == MessageBoxResult.OK)
+            {
+                _isExitingConfirmed = true;
                 Close();
+            }
         }
 
         private void Window_Closing(object sender, CancelEventArgs e)
         {
+            if (_isExitingConfirmed) return;
             var result = MessageBox.Show(
                 Localization.Get("ExitConfirmMessage"),
                 Localization.Get("ExitConfirmTitle"),
@@ -1074,6 +1235,8 @@ namespace TeknoParrotBigBox
                 MessageBoxResult.Cancel);
             if (result != MessageBoxResult.OK)
                 e.Cancel = true;
+            else
+                _isExitingConfirmed = true;
         }
 
         /// <summary>PreviewKeyDown 先于列表收到按键，保证左右=游戏、上下=分类统一生效。</summary>
@@ -1317,9 +1480,10 @@ namespace TeknoParrotBigBox
         private void ToggleMuteButton_Click(object sender, RoutedEventArgs e)
         {
             _isMuted = !_isMuted;
-            if (_previewVlcPlayer != null)
+            if (PreviewVideoView != null)
             {
-                _previewVlcPlayer.Volume = _isMuted ? 0 : 50;
+                PreviewVideoView.IsMuted = _isMuted;
+                if (!_isMuted) PreviewVideoView.Volume = 0.5;
             }
 
             if (MuteIcon != null)
@@ -1539,4 +1703,5 @@ namespace TeknoParrotBigBox
         }
     }
 }
+
 

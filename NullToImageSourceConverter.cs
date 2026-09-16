@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Globalization;
 using System.IO;
 using System.Windows;
@@ -9,38 +10,61 @@ namespace TeknoParrotBigBox
 {
     /// <summary>
     /// 将路径字符串或 null 转为 ImageSource，避免 WPF 默认转换器对 null 报错。
-    /// 当值为 null 或空字符串时返回 null；否则从路径加载图片，加载失败也返回 null。
-    /// BitmapImage 必须在 UI 线程创建，故在非 UI 线程时通过 Dispatcher 切回 UI 线程再创建。
+    /// 内置静态缓存（按绝对路径）：同一封面图多处绑定时，只从磁盘加载一次，复用 BitmapImage 实例。
+    /// 可选的尺寸参数：传入数字时按 DecodePixelWidth 解码，降低内存占用和 BlurEffect 开销。
     /// </summary>
     public class NullToImageSourceConverter : IValueConverter
     {
+        /// <summary>按绝对路径缓存已加载的 BitmapImage。BitmapImage.Freeze() 后跨线程可安全使用。</summary>
+        private static readonly ConcurrentDictionary<string, BitmapImage> ImageCache =
+            new ConcurrentDictionary<string, BitmapImage>(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>小图缓存（用于背景模糊，256px 宽度解码）。</summary>
+        private static readonly ConcurrentDictionary<string, BitmapImage> ThumbCache =
+            new ConcurrentDictionary<string, BitmapImage>(StringComparer.OrdinalIgnoreCase);
+
+        private const int BlurThumbWidth = 256;
+
         public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
         {
             string path = value as string;
-            if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
-                return null;
+            if (string.IsNullOrWhiteSpace(path)) return null;
 
-            // WPF 的 BitmapImage 只能在 UI 线程创建；无 Application 时直接返回 null 避免异常
-            if (Application.Current == null)
-                return null;
+            string fullPath;
+            try { fullPath = Path.GetFullPath(path); }
+            catch { return null; }
+            if (!File.Exists(fullPath)) return null;
+
+            // 根据 parameter 决定缓存池和目标尺寸
+            bool useThumb = parameter is string paramStr && string.Equals(paramStr, "thumb", StringComparison.OrdinalIgnoreCase);
+            var cache = useThumb ? ThumbCache : ImageCache;
+
+            if (cache.TryGetValue(fullPath, out var cached))
+                return cached;
+
+            // WPF 的 BitmapImage 必须在 UI 线程创建
+            if (Application.Current == null) return null;
             if (!Application.Current.Dispatcher.CheckAccess())
-            {
                 return Application.Current.Dispatcher.Invoke(
                     () => Convert(value, targetType, parameter, culture));
-            }
 
             try
             {
-                string fullPath = Path.GetFullPath(path);
-                // 用 Stream 加载，避免 Uri 方式在部分场景下触发 PresentationFramework 的 NotSupportedException
                 using (var stream = new FileStream(fullPath, FileMode.Open, FileAccess.Read, FileShare.Read))
                 {
                     var img = new BitmapImage();
                     img.BeginInit();
                     img.CacheOption = BitmapCacheOption.OnLoad;
                     img.StreamSource = stream;
+                    if (useThumb)
+                    {
+                        // 解码时按目标尺寸缩小，大幅降低内存和后续 BlurEffect 开销
+                        img.DecodePixelWidth = BlurThumbWidth;
+                        img.DecodePixelHeight = BlurThumbWidth;
+                    }
                     img.EndInit();
                     img.Freeze();
+                    cache.TryAdd(fullPath, img);
                     return img;
                 }
             }
@@ -53,6 +77,13 @@ namespace TeknoParrotBigBox
         public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
         {
             return null;
+        }
+
+        /// <summary>清除所有缓存（设置 MediaPath 或重新扫描媒体后调用）。</summary>
+        public static void ClearCache()
+        {
+            ImageCache.Clear();
+            ThumbCache.Clear();
         }
     }
 }

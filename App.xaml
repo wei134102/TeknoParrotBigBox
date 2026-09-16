@@ -3,6 +3,33 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              Startup="Application_Startup">
     <Application.Resources>
+        <!-- ====== 全局主题色资源（所有窗口共享） ====== -->
+        <Color x:Key="ThemeBgWindow">#0A0A14</Color>
+        <Color x:Key="ThemeBgPanel">#131120</Color>
+        <Color x:Key="ThemeBgCard">#1A1830</Color>
+        <Color x:Key="ThemeBgContent">#0E0C1C</Color>
+        <Color x:Key="ThemeBorderSubtle">#22203A</Color>
+        <Color x:Key="ThemeBorderMedium">#302E48</Color>
+        <Color x:Key="ThemeAccentCyan">#00FFB3</Color>
+        <Color x:Key="ThemeAccentGold">#FFD27F</Color>
+        <Color x:Key="ThemeAccentBlue">#2196F3</Color>
+        <Color x:Key="ThemeTextPrimary">#DDDDEE</Color>
+        <Color x:Key="ThemeTextSecondary">#BBBBCC</Color>
+        <Color x:Key="ThemeTextTertiary">#9999AA</Color>
+        <Color x:Key="ThemeTextHint">#555570</Color>
+
+        <SolidColorBrush x:Key="ThemeBgWindowBrush" Color="{StaticResource ThemeBgWindow}" />
+        <SolidColorBrush x:Key="ThemeBgPanelBrush" Color="{StaticResource ThemeBgPanel}" />
+        <SolidColorBrush x:Key="ThemeBgCardBrush" Color="{StaticResource ThemeBgCard}" />
+        <SolidColorBrush x:Key="ThemeBgContentBrush" Color="{StaticResource ThemeBgContent}" />
+        <SolidColorBrush x:Key="ThemeBorderSubtleBrush" Color="{StaticResource ThemeBorderSubtle}" />
+        <SolidColorBrush x:Key="ThemeBorderMediumBrush" Color="{StaticResource ThemeBorderMedium}" />
+        <SolidColorBrush x:Key="ThemeAccentCyanBrush" Color="{StaticResource ThemeAccentCyan}" />
+        <SolidColorBrush x:Key="ThemeAccentGoldBrush" Color="{StaticResource ThemeAccentGold}" />
+        <SolidColorBrush x:Key="ThemeAccentBlueBrush" Color="{StaticResource ThemeAccentBlue}" />
+        <SolidColorBrush x:Key="ThemeTextPrimaryBrush" Color="{StaticResource ThemeTextPrimary}" />
+        <SolidColorBrush x:Key="ThemeTextSecondaryBrush" Color="{StaticResource ThemeTextSecondary}" />
+        <SolidColorBrush x:Key="ThemeTextTertiaryBrush" Color="{StaticResource ThemeTextTertiary}" />
+        <SolidColorBrush x:Key="ThemeTextHintBrush" Color="{StaticResource ThemeTextHint}" />
     </Application.Resources>
 </Application>
-
